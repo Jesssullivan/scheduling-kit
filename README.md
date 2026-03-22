@@ -2,6 +2,8 @@
 
 Backend-agnostic scheduling system with Svelte 5 components, multiple scheduling adapters, and alternative payment support. Built with fp-ts for functional composition and Zod for runtime validation.
 
+Docs, prebuilts, packages and blog post to come later.  Another tinyland artifact it is time to publish.  This package powers scheduling transactions for small buisnesses in the eastern US for whom I've done contracting work. 
+
 ## Features
 
 - **Multiple scheduling backends** -- Acuity, Cal.com, or bring-your-own PostgreSQL (HomegrownAdapter)
