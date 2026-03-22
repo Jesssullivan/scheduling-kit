@@ -1,0 +1,12 @@
+[
+  {
+    "id": 67890,
+    "name": "Jen Sullivan",
+    "email": "jen@massageithaca.com",
+    "description": "Licensed massage therapist specializing in TMD/TMJ treatment and therapeutic massage.",
+    "image": "https://massageithaca.com/images/jen-sullivan.jpg",
+    "timezone": "America/New_York",
+    "replyTo": "jen@massageithaca.com",
+    "location": "950 Danby Rd (Route 96B), South Hill Business Campus, Suite 10, Ithaca, NY 14850"
+  }
+]

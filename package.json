@@ -1,0 +1,142 @@
+{
+  "name": "@tummycrypt/scheduling-kit",
+  "version": "0.1.0",
+  "description": "Backend-agnostic scheduling components with alternative payment support",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "svelte": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./components": {
+      "types": "./dist/components/index.d.ts",
+      "svelte": "./dist/components/index.js",
+      "default": "./dist/components/index.js"
+    },
+    "./adapters": {
+      "types": "./dist/adapters/index.d.ts",
+      "default": "./dist/adapters/index.js"
+    },
+    "./payments": {
+      "types": "./dist/payments/index.d.ts",
+      "default": "./dist/payments/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "default": "./dist/core/index.js"
+    },
+    "./lib": {
+      "types": "./dist/lib/index.d.ts",
+      "default": "./dist/lib/index.js"
+    },
+    "./reconciliation": {
+      "types": "./dist/reconciliation/index.d.ts",
+      "default": "./dist/reconciliation/index.js"
+    },
+    "./stores": {
+      "types": "./dist/stores/index.d.ts",
+      "svelte": "./dist/stores/index.js",
+      "default": "./dist/stores/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "default": "./dist/testing/index.js"
+    }
+  },
+  "svelte": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "!dist/tests"
+  ],
+  "scripts": {
+    "dev": "vite dev",
+    "build": "svelte-kit sync && svelte-package",
+    "package": "svelte-kit sync && svelte-package",
+    "prepublishOnly": "pnpm package",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "test": "vitest",
+    "test:unit": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:component": "vitest run --config vitest.component.config.ts",
+    "test:all": "vitest run && vitest run --config vitest.integration.config.ts && vitest run --config vitest.component.config.ts",
+    "test:e2e": "playwright test",
+    "test:live": "vitest run --config vitest.live.config.ts",
+    "test:coverage": "vitest run --coverage",
+    "test:coverage:report": "vitest run --coverage --reporter=verbose",
+    "lint": "eslint .",
+    "fixtures:update": "npx tsx scripts/update-fixtures.ts",
+    "traces:refresh": "npx tsx scripts/refresh-traces.ts"
+  },
+  "peerDependencies": {
+    "@skeletonlabs/skeleton": "^4.0.0",
+    "@skeletonlabs/skeleton-svelte": "^4.0.0",
+    "svelte": "^5.0.0",
+    "playwright-core": "^1.50.0"
+  },
+  "peerDependenciesMeta": {
+    "@skeletonlabs/skeleton": { "optional": true },
+    "@skeletonlabs/skeleton-svelte": { "optional": true },
+    "playwright-core": { "optional": true }
+  },
+  "dependencies": {
+    "effect": "^3.19.14",
+    "fp-ts": "^2.16.0",
+    "zod": "^4.3.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.1",
+    "playwright": "^1.58.1",
+    "playwright-core": "^1.58.1",
+    "@sveltejs/adapter-auto": "^7.0.0",
+    "@sveltejs/kit": "^2.0.0",
+    "@sveltejs/package": "^2.0.0",
+    "@sveltejs/vite-plugin-svelte": "^6.0.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/svelte": "^5.3.1",
+    "@types/node": "^20.0.0",
+    "@vitest/coverage-v8": "^4.0.0",
+    "dotenv": "^16.6.1",
+    "eslint": "^9.0.0",
+    "eslint-plugin-svelte": "^2.0.0",
+    "fast-check": "^3.15.0",
+    "jsdom": "^28.0.0",
+    "msw": "2.7.0",
+    "prettier": "^3.0.0",
+    "prettier-plugin-svelte": "^3.0.0",
+    "publint": "^0.2.0",
+    "svelte": "^5.0.0",
+    "svelte-check": "^4.0.0",
+    "tslib": "^2.0.0",
+    "typescript": "^5.0.0",
+    "vite": "^6.0.0",
+    "vitest": "^4.0.0"
+  },
+  "keywords": [
+    "svelte",
+    "sveltekit",
+    "scheduling",
+    "booking",
+    "payments",
+    "venmo",
+    "stripe",
+    "acuity",
+    "calcom",
+    "fp-ts",
+    "functional"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Jesssullivan/scheduling-kit.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

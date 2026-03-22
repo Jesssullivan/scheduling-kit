@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.svelte-kit/
+.env
+.env.*
+!.env.test.local.example
+coverage/
+__pycache__/
+*.pyc
+.DS_Store
+playwright-report/
+test-results/
+*.tgz
+PROGRESS.md

@@ -1,0 +1,47 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@aspect_rules_js//npm:defs.bzl", "npm_package")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@npm//:defs.bzl", "npm_link_all_packages")
+
+npm_link_all_packages(name = "node_modules")
+
+ts_project(
+    name = "scheduling-kit_ts",
+    srcs = glob(
+        ["src/**/*.ts"],
+        exclude = [
+            "src/**/*.test.ts",
+            "src/tests/**",
+        ],
+    ),
+    declaration = True,
+    resolve_json_module = True,
+    tsconfig = "tsconfig.json",
+    deps = [
+        ":node_modules/effect",
+        ":node_modules/fp-ts",
+        ":node_modules/zod",
+    ],
+)
+
+js_library(
+    name = "scheduling-kit",
+    srcs = [
+        "package.json",
+        ":scheduling-kit_ts",
+    ] + glob(["src/**/*.svelte"]),
+    visibility = ["//visibility:public"],
+)
+
+npm_package(
+    name = "pkg",
+    srcs = [
+        "package.json",
+        "LICENSE",
+        "README.md",
+        ":scheduling-kit",
+    ],
+    package = "@tummycrypt/scheduling-kit",
+    version = "0.1.0",
+    visibility = ["//visibility:public"],
+)

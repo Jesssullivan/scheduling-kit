@@ -1,0 +1,773 @@
+<script lang="ts">
+  /**
+   * HybridCheckoutDrawer Component
+   * Unified out-of-band payment checkout flow
+   *
+   * Flow:
+   * 1. Custom UI for service/provider/datetime/client selection
+   * 2. Payment method selection (Venmo, Card via Stripe, Cash)
+   * 3. Collect payment via our own adapter
+   * 4. Book on Acuity at $0 via wizard automation
+   */
+  import type { Service, Provider, ClientInfo, TimeSlot, Booking, PaymentIntent, PaymentResult } from '../core/types.js';
+  import type { AcuityBookingData } from '../lib/acuity-listener.js';
+  import type { OrderCreateParams } from './VenmoCheckout.svelte';
+  import { Dialog, Portal } from '@skeletonlabs/skeleton-svelte';
+  import ServicePicker from './ServicePicker.svelte';
+  import ProviderPicker from './ProviderPicker.svelte';
+  import DateTimePicker from './DateTimePicker.svelte';
+  import ClientForm from './ClientForm.svelte';
+  import BookingConfirmation from './BookingConfirmation.svelte';
+  import VenmoCheckout from './VenmoCheckout.svelte';
+  import StripeCheckout from './StripeCheckout.svelte';
+
+  // =============================================================================
+  // TYPES
+  // =============================================================================
+
+  type HybridStep =
+    | 'service'
+    | 'provider'
+    | 'datetime'
+    | 'details'
+    | 'payment'
+    | 'venmo-checkout'
+    | 'stripe-checkout'
+    | 'processing'
+    | 'complete'
+    | 'error';
+
+  interface PaymentOption {
+    id: string;
+    name: string;
+    icon: string;
+    description: string;
+  }
+
+  // =============================================================================
+  // PROPS
+  // =============================================================================
+
+  let {
+    open = $bindable(false),
+    services = [],
+    providers = [],
+    loadingServices = false,
+    loadingProviders = false,
+    paypalClientId,
+    paypalEnvironment = 'sandbox',
+    stripePublishableKey,
+    onClose,
+    onLoadDates,
+    onLoadSlots,
+    onCreatePaymentOrder,
+    onCapturePayment,
+    onCreateStripeIntent,
+    onBookWithPaymentRef,
+    onCashPayment,
+    onBookingComplete,
+    timezone = 'America/New_York',
+    skipProvider = false,
+    debug = false,
+  }: {
+    /** Whether drawer is open */
+    open?: boolean;
+    /** Available services (from scraper or API) */
+    services?: Service[];
+    /** Available providers */
+    providers?: Provider[];
+    /** Loading state for services */
+    loadingServices?: boolean;
+    /** Loading state for providers */
+    loadingProviders?: boolean;
+    /** PayPal Client ID for Venmo SDK */
+    paypalClientId?: string;
+    /** PayPal environment */
+    paypalEnvironment?: 'sandbox' | 'production';
+    /** Stripe publishable key (enables card payment option) */
+    stripePublishableKey?: string;
+    /** Close callback */
+    onClose?: () => void;
+    /** Load available dates callback (startDate/endDate override default 60-day window) */
+    onLoadDates?: (serviceId: string, providerId?: string, startDate?: string, endDate?: string) => Promise<string[]>;
+    /** Load time slots callback */
+    onLoadSlots?: (serviceId: string, date: string, providerId?: string) => Promise<TimeSlot[]>;
+    /** Create a PayPal order for Venmo approval */
+    onCreatePaymentOrder?: (params: OrderCreateParams) => Promise<PaymentIntent>;
+    /** Capture an approved PayPal order */
+    onCapturePayment?: (intentId: string) => Promise<PaymentResult>;
+    /** Create a Stripe PaymentIntent (returns clientSecret + intentId) */
+    onCreateStripeIntent?: (params: { amount: number; currency: string; description: string }) => Promise<{ clientSecret: string; intentId: string }>;
+    /** Create booking with a pre-captured payment reference */
+    onBookWithPaymentRef?: (params: { serviceId: string; datetime: string; client: ClientInfo; paymentRef: string; paymentProcessor: string }) => Promise<{ booking: Partial<Booking> }>;
+    /** Process Cash payment callback */
+    onCashPayment?: (data: { service: Service; client: ClientInfo; datetime: string }) => Promise<void>;
+    /** Booking complete callback */
+    onBookingComplete?: (booking: Partial<Booking> | AcuityBookingData) => void;
+    /** IANA timezone for date/time display */
+    timezone?: string;
+    /** Skip provider step (single-provider businesses) */
+    skipProvider?: boolean;
+    /** Enable debug logging */
+    debug?: boolean;
+  } = $props();
+
+  // =============================================================================
+  // STATE
+  // =============================================================================
+
+  let step = $state<HybridStep>('service');
+  let selectedService = $state<Service | undefined>(undefined);
+  let selectedProvider = $state<Provider | undefined>(undefined);
+  let selectedDatetime = $state<string | undefined>(undefined);
+  let selectedDate = $state<string | undefined>(undefined);
+  let clientInfo = $state<ClientInfo | undefined>(undefined);
+  let selectedPayment = $state<string | undefined>(undefined);
+  let errorMessage = $state<string | undefined>(undefined);
+  let completedBooking = $state<Partial<Booking> | AcuityBookingData | undefined>(undefined);
+
+  // Data loading
+  let availableDates = $state<string[]>([]);
+  let availableSlots = $state<TimeSlot[]>([]);
+  let loadingDates = $state(false);
+  let loadingSlots = $state(false);
+  let processing = $state(false);
+
+  // Stripe intent (created server-side when user selects card payment)
+  let stripeIntent = $state<{ clientSecret: string; intentId: string } | undefined>(undefined);
+
+  // Payment options — dynamically built from available adapters
+  const paymentOptions = $derived.by(() => {
+    const opts: PaymentOption[] = [];
+    if (paypalClientId) {
+      opts.push({
+        id: 'venmo',
+        name: 'Venmo',
+        icon: '💙',
+        description: 'Pay with Venmo',
+      });
+    }
+    if (stripePublishableKey) {
+      opts.push({
+        id: 'stripe',
+        name: 'Credit/Debit Card',
+        icon: '💳',
+        description: 'Pay with card',
+      });
+    }
+    opts.push({
+      id: 'cash',
+      name: 'Cash at Visit',
+      icon: '💵',
+      description: 'Pay cash when you arrive',
+    });
+    return opts;
+  });
+
+  // =============================================================================
+  // DERIVED
+  // =============================================================================
+
+  const stepTitles: Record<HybridStep, string> = {
+    service: 'Select a Service',
+    provider: 'Choose Your Provider',
+    datetime: 'Pick a Date & Time',
+    details: 'Your Information',
+    payment: 'Payment Method',
+    'venmo-checkout': 'Pay with Venmo',
+    'stripe-checkout': 'Pay with Card',
+    processing: 'Processing...',
+    complete: 'Booking Confirmed',
+    error: 'Something Went Wrong',
+  };
+
+  const progress = $derived.by(() => {
+    const steps: HybridStep[] = skipProvider
+      ? ['service', 'datetime', 'details', 'payment']
+      : ['service', 'provider', 'datetime', 'details', 'payment'];
+    const index = steps.indexOf(step);
+    if (index === -1) return 100;
+    return Math.round(((index + 1) / steps.length) * 100);
+  });
+
+  const canGoBack = $derived(
+    step !== 'service' && step !== 'complete' && step !== 'processing' && step !== 'venmo-checkout' && step !== 'stripe-checkout'
+  );
+
+  // =============================================================================
+  // HANDLERS
+  // =============================================================================
+
+  const handleServiceSelect = (service: Service) => {
+    selectedService = service;
+    if (skipProvider) {
+      step = 'datetime';
+      loadDatesForService();
+    } else {
+      step = 'provider';
+    }
+  };
+
+  const handleProviderSelect = (provider: Provider | undefined) => {
+    selectedProvider = provider;
+    step = 'datetime';
+    loadDatesForService();
+  };
+
+  const loadDatesForService = async (startDate?: string, endDate?: string) => {
+    if (!selectedService || !onLoadDates) return;
+    loadingDates = true;
+    try {
+      const dates = await onLoadDates(selectedService.id, selectedProvider?.id, startDate, endDate);
+      if (startDate) {
+        // Merge with existing dates (month navigation), deduplicate
+        const merged = new Set([...availableDates, ...dates]);
+        availableDates = [...merged].sort();
+      } else {
+        availableDates = dates;
+      }
+    } catch (e) {
+      console.error('Failed to load dates:', e);
+      if (!startDate) availableDates = [];
+    }
+    loadingDates = false;
+  };
+
+  const handleMonthChange = (startDate: string, endDate: string) => {
+    // Check if we already have dates in this range
+    const hasDataForMonth = availableDates.some(d => d >= startDate && d <= endDate);
+    if (!hasDataForMonth) {
+      loadDatesForService(startDate, endDate);
+    }
+  };
+
+  const handleDateSelect = async (date: string) => {
+    if (!selectedService || !onLoadSlots) return;
+    selectedDate = date;
+    loadingSlots = true;
+    try {
+      availableSlots = await onLoadSlots(selectedService.id, date, selectedProvider?.id);
+    } catch (e) {
+      console.error('Failed to load slots:', e);
+      availableSlots = [];
+    }
+    loadingSlots = false;
+  };
+
+  const handleTimeSelect = (datetime: string) => {
+    selectedDatetime = datetime;
+    step = 'details';
+  };
+
+  const handleClientSubmit = (client: ClientInfo) => {
+    clientInfo = client;
+    step = 'payment';
+  };
+
+  const handlePaymentSelect = async (paymentId: string) => {
+    selectedPayment = paymentId;
+
+    if (paymentId === 'venmo' && paypalClientId && onCreatePaymentOrder && onCapturePayment) {
+      // Use PayPal SDK flow for Venmo — requires client-side approval
+      step = 'venmo-checkout';
+    } else if (paymentId === 'stripe' && stripePublishableKey && onCreateStripeIntent && selectedService) {
+      // Create PaymentIntent server-side, then show Stripe Elements
+      step = 'processing';
+      try {
+        stripeIntent = await onCreateStripeIntent({
+          amount: selectedService.price,
+          currency: selectedService.currency ?? 'USD',
+          description: selectedService.name,
+        });
+        step = 'stripe-checkout';
+      } catch (e) {
+        errorMessage = e instanceof Error ? e.message : 'Failed to initialize payment';
+        step = 'error';
+      }
+    } else {
+      processCustomPayment(paymentId);
+    }
+  };
+
+  const processCustomPayment = async (paymentId: string) => {
+    if (!selectedService || !clientInfo || !selectedDatetime) return;
+
+    step = 'processing';
+    processing = true;
+    errorMessage = undefined;
+
+    try {
+      const paymentData = {
+        service: selectedService,
+        client: clientInfo,
+        datetime: selectedDatetime,
+      };
+
+      if (paymentId === 'cash' && onCashPayment) {
+        await onCashPayment(paymentData);
+      }
+
+      // Create a local booking record
+      const booking: Partial<Booking> = {
+        id: `local-${Date.now()}`,
+        serviceId: selectedService.id,
+        serviceName: selectedService.name,
+        providerId: selectedProvider?.id,
+        providerName: selectedProvider?.name,
+        datetime: selectedDatetime,
+        duration: selectedService.duration,
+        price: selectedService.price,
+        currency: selectedService.currency,
+        client: clientInfo,
+        status: 'pending',
+        paymentStatus: paymentId === 'cash' ? 'pending' : 'paid',
+      };
+      completedBooking = booking;
+
+      step = 'complete';
+      onBookingComplete?.(booking);
+    } catch (e) {
+      errorMessage = e instanceof Error ? e.message : 'Payment failed';
+      step = 'error';
+    }
+
+    processing = false;
+  };
+
+  const handleVenmoSuccess = async (result: PaymentResult) => {
+    if (!selectedService || !clientInfo || !selectedDatetime) return;
+    if (debug) console.log('[HybridCheckout] Venmo payment captured:', result);
+
+    step = 'processing';
+    processing = true;
+
+    try {
+      if (onBookWithPaymentRef) {
+        const { booking } = await onBookWithPaymentRef({
+          serviceId: selectedService.id,
+          datetime: selectedDatetime,
+          client: clientInfo,
+          paymentRef: result.transactionId,
+          paymentProcessor: 'venmo',
+        });
+        completedBooking = booking;
+      } else {
+        // Fallback: create local booking record
+        completedBooking = {
+          id: `venmo-${result.transactionId}`,
+          serviceId: selectedService.id,
+          serviceName: selectedService.name,
+          datetime: selectedDatetime,
+          duration: selectedService.duration,
+          price: selectedService.price,
+          currency: selectedService.currency,
+          client: clientInfo,
+          status: 'confirmed',
+          paymentStatus: 'paid',
+        };
+      }
+
+      step = 'complete';
+      onBookingComplete?.(completedBooking);
+    } catch (e) {
+      errorMessage = e instanceof Error ? e.message : 'Failed to create booking after payment';
+      step = 'error';
+    }
+
+    processing = false;
+  };
+
+  const handleVenmoCancel = () => {
+    // User cancelled Venmo — go back to payment selection
+    step = 'payment';
+  };
+
+  const handleStripeSuccess = async (result: PaymentResult) => {
+    if (!selectedService || !clientInfo || !selectedDatetime) return;
+    if (debug) console.log('[HybridCheckout] Stripe payment succeeded:', result);
+
+    step = 'processing';
+    processing = true;
+
+    try {
+      if (onBookWithPaymentRef) {
+        const { booking } = await onBookWithPaymentRef({
+          serviceId: selectedService.id,
+          datetime: selectedDatetime,
+          client: clientInfo,
+          paymentRef: result.transactionId,
+          paymentProcessor: 'stripe',
+        });
+        completedBooking = booking;
+      } else {
+        completedBooking = {
+          id: `stripe-${result.transactionId}`,
+          serviceId: selectedService.id,
+          serviceName: selectedService.name,
+          datetime: selectedDatetime,
+          duration: selectedService.duration,
+          price: selectedService.price,
+          currency: selectedService.currency,
+          client: clientInfo,
+          status: 'confirmed',
+          paymentStatus: 'paid',
+        };
+      }
+
+      step = 'complete';
+      onBookingComplete?.(completedBooking);
+    } catch (e) {
+      errorMessage = e instanceof Error ? e.message : 'Failed to create booking after payment';
+      step = 'error';
+    }
+
+    processing = false;
+  };
+
+  const handleStripeCancel = () => {
+    stripeIntent = undefined;
+    step = 'payment';
+  };
+
+  const handleBack = () => {
+    errorMessage = undefined;
+    switch (step) {
+      case 'provider':
+        step = 'service';
+        break;
+      case 'datetime':
+        step = skipProvider ? 'service' : 'provider';
+        break;
+      case 'details':
+        step = 'datetime';
+        break;
+      case 'payment':
+        step = 'details';
+        break;
+      case 'venmo-checkout':
+        step = 'payment';
+        break;
+      case 'stripe-checkout':
+        stripeIntent = undefined;
+        step = 'payment';
+        break;
+      case 'error':
+        step = 'payment';
+        break;
+    }
+  };
+
+  const handleClose = () => {
+    open = false;
+    onClose?.();
+  };
+
+  const handleNewBooking = () => {
+    // Reset state
+    step = 'service';
+    selectedService = undefined;
+    selectedProvider = undefined;
+    selectedDatetime = undefined;
+    selectedDate = undefined;
+    clientInfo = undefined;
+    selectedPayment = undefined;
+    errorMessage = undefined;
+    completedBooking = undefined;
+    stripeIntent = undefined;
+    availableDates = [];
+    availableSlots = [];
+  };
+
+  // Format price
+  const formatPrice = (cents: number): string =>
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
+</script>
+
+<Dialog
+  open={open}
+  onOpenChange={(details: { open: boolean }) => {
+    if (!details.open) handleClose();
+  }}
+  closeOnInteractOutside={true}
+>
+  <Portal>
+    <Dialog.Backdrop class="fixed inset-0 z-50 bg-black/50 modal-backdrop" />
+    <Dialog.Positioner class="fixed inset-0 z-50 flex justify-center items-end md:items-center md:p-4">
+      <Dialog.Content class="modal-panel bg-surface-50-950 shadow-2xl w-full overflow-hidden flex flex-col rounded-t-xl md:rounded-xl max-h-[90vh] md:max-h-[85vh] md:max-w-lg">
+        <!-- Header -->
+        <header class="drawer-header flex items-center justify-between p-4 border-b border-surface-200-800">
+          <div class="flex items-center gap-3">
+            {#if canGoBack}
+              <button type="button" class="btn btn-sm preset-tonal" onclick={handleBack} aria-label="Go back">
+                ←
+              </button>
+            {/if}
+            <Dialog.Title class="text-lg font-semibold">{stepTitles[step]}</Dialog.Title>
+          </div>
+          <Dialog.CloseTrigger class="btn btn-sm preset-tonal" aria-label="Close">
+            ✕
+          </Dialog.CloseTrigger>
+        </header>
+
+        <!-- Progress Bar -->
+        {#if step !== 'complete' && step !== 'error' && step !== 'venmo-checkout' && step !== 'stripe-checkout'}
+          <div class="progress-bar h-1 bg-surface-200-800">
+            <div class="h-full bg-primary-500 transition-all duration-300" style="width: {progress}%"></div>
+          </div>
+        {/if}
+
+        <!-- Content -->
+        <main class="drawer-content flex-1 overflow-y-auto p-6">
+          <!-- Error Banner -->
+          {#if errorMessage && step !== 'error'}
+            <div class="error-banner bg-error-100-900 text-error-700-300 p-4 rounded-container mb-6">
+              <p>{errorMessage}</p>
+            </div>
+          {/if}
+
+      <!-- Step Content -->
+      {#if step === 'service'}
+        <ServicePicker
+          {services}
+          selectedService={selectedService}
+          loading={loadingServices}
+          onSelect={handleServiceSelect}
+        />
+
+      {:else if step === 'provider'}
+        <ProviderPicker
+          {providers}
+          selectedProvider={selectedProvider}
+          loading={loadingProviders}
+          allowAny={true}
+          onSelect={handleProviderSelect}
+        />
+
+      {:else if step === 'datetime'}
+        <DateTimePicker
+          availableDates={availableDates.map((d) => ({ date: d, slots: 1 }))}
+          availableSlots={availableSlots}
+          bind:selectedDate={selectedDate}
+          bind:selectedTime={selectedDatetime}
+          loading={loadingDates}
+          loadingSlots={loadingSlots}
+          timezone={timezone}
+          onDateSelect={handleDateSelect}
+          onTimeSelect={handleTimeSelect}
+          onMonthChange={handleMonthChange}
+        />
+
+      {:else if step === 'details'}
+        <ClientForm
+          initialData={clientInfo}
+          loading={processing}
+          showIntakeFields={true}
+          onSubmit={handleClientSubmit}
+        />
+
+      {:else if step === 'payment'}
+        <div class="payment-step">
+          <!-- Summary -->
+          {#if selectedService}
+            <div class="booking-summary bg-surface-100-900 rounded-container p-4 mb-6">
+              <div class="flex justify-between items-center">
+                <div>
+                  <p class="font-medium">{selectedService.name}</p>
+                  <p class="text-sm text-surface-500">{selectedService.duration} min</p>
+                </div>
+                <p class="text-xl font-bold text-primary-600-400">
+                  {formatPrice(selectedService.price)}
+                </p>
+              </div>
+            </div>
+          {/if}
+
+          <h4 class="text-md font-medium mb-4">Select Payment Method</h4>
+
+          <div class="payment-options space-y-3">
+            {#each paymentOptions as option (option.id)}
+              <button
+                type="button"
+                class="payment-option w-full p-4 rounded-container text-left flex items-center gap-4
+                       bg-surface-100-900 hover:bg-surface-200-800 transition-colors"
+                onclick={() => handlePaymentSelect(option.id)}
+              >
+                <span class="text-2xl">{option.icon}</span>
+                <div class="flex-1">
+                  <p class="font-medium">{option.name}</p>
+                  <p class="text-sm text-surface-500">{option.description}</p>
+                </div>
+                <span class="text-surface-400-600">→</span>
+              </button>
+            {/each}
+          </div>
+        </div>
+
+      {:else if step === 'venmo-checkout'}
+        <div class="venmo-step">
+          {#if selectedService}
+            <div class="booking-summary bg-surface-100-900 rounded-container p-4 mb-6">
+              <div class="flex justify-between items-center">
+                <div>
+                  <p class="font-medium">{selectedService.name}</p>
+                  <p class="text-sm text-surface-500">{selectedService.duration} min</p>
+                </div>
+                <p class="text-xl font-bold text-primary-600-400">
+                  {formatPrice(selectedService.price)}
+                </p>
+              </div>
+            </div>
+          {/if}
+
+          {#if paypalClientId && onCreatePaymentOrder && onCapturePayment && selectedService}
+            <VenmoCheckout
+              clientId={paypalClientId}
+              environment={paypalEnvironment}
+              amount={selectedService.price}
+              currency={selectedService.currency ?? 'USD'}
+              description={selectedService.name}
+              onCreateOrder={onCreatePaymentOrder}
+              onCapturePayment={onCapturePayment}
+              onSuccess={handleVenmoSuccess}
+              onError={(e) => { errorMessage = e.message; step = 'error'; }}
+              onCancel={handleVenmoCancel}
+              {debug}
+            />
+          {/if}
+
+          <button
+            type="button"
+            class="btn btn-sm preset-tonal mt-4 w-full"
+            onclick={handleVenmoCancel}
+          >
+            Choose a different payment method
+          </button>
+        </div>
+
+      {:else if step === 'stripe-checkout'}
+        <div class="stripe-step">
+          {#if selectedService}
+            <div class="booking-summary bg-surface-100-900 rounded-container p-4 mb-6">
+              <div class="flex justify-between items-center">
+                <div>
+                  <p class="font-medium">{selectedService.name}</p>
+                  <p class="text-sm text-surface-500">{selectedService.duration} min</p>
+                </div>
+                <p class="text-xl font-bold text-primary-600-400">
+                  {formatPrice(selectedService.price)}
+                </p>
+              </div>
+            </div>
+          {/if}
+
+          {#if stripePublishableKey && stripeIntent && selectedService}
+            <StripeCheckout
+              publishableKey={stripePublishableKey}
+              clientSecret={stripeIntent.clientSecret}
+              amount={selectedService.price}
+              currency={selectedService.currency ?? 'USD'}
+              onSuccess={handleStripeSuccess}
+              onCancel={handleStripeCancel}
+              onError={(e) => { errorMessage = e.message; step = 'error'; }}
+            />
+          {/if}
+        </div>
+
+      {:else if step === 'processing'}
+        <div class="processing-step text-center py-12">
+          <span class="spinner-large"></span>
+          <p class="mt-4 text-surface-500">Processing your booking...</p>
+        </div>
+
+      {:else if step === 'complete'}
+        <div class="complete-step">
+          <div class="success-icon w-16 h-16 rounded-full bg-success-100-900 flex items-center justify-center mx-auto mb-4">
+            <span class="text-3xl">✓</span>
+          </div>
+          <h3 class="text-xl font-semibold text-center mb-2">Booking Confirmed!</h3>
+
+          {#if completedBooking}
+            <div class="booking-details bg-surface-100-900 rounded-container p-4 mt-6">
+              {#if 'appointmentType' in completedBooking}
+                <!-- AcuityBookingData -->
+                <p><strong>Service:</strong> {completedBooking.appointmentType}</p>
+                <p><strong>Date:</strong> {completedBooking.date} at {completedBooking.time}</p>
+                <p><strong>Confirmation #:</strong> {completedBooking.appointmentId}</p>
+              {:else}
+                <!-- Local Booking -->
+                <p><strong>Service:</strong> {selectedService?.name}</p>
+                <p><strong>Date:</strong> {selectedDatetime ? new Date(selectedDatetime).toLocaleString() : ''}</p>
+                <p><strong>Payment:</strong> {selectedPayment}</p>
+              {/if}
+            </div>
+          {/if}
+
+          <div class="actions mt-6 space-y-3">
+            <button
+              type="button"
+              class="btn w-full preset-filled-primary-500"
+              onclick={handleClose}
+            >
+              Done
+            </button>
+            <button
+              type="button"
+              class="btn w-full preset-tonal"
+              onclick={handleNewBooking}
+            >
+              Book Another Appointment
+            </button>
+          </div>
+        </div>
+
+      {:else if step === 'error'}
+        <div class="error-step text-center py-8">
+          <div class="w-16 h-16 rounded-full bg-error-100-900 flex items-center justify-center mx-auto mb-4">
+            <span class="text-2xl">✕</span>
+          </div>
+          <h3 class="text-lg font-semibold mb-2">Something Went Wrong</h3>
+          <p class="text-surface-500 mb-6">{errorMessage || 'An error occurred.'}</p>
+          <button type="button" class="btn preset-filled-primary-500" onclick={handleBack}>
+            Try Again
+          </button>
+        </div>
+      {/if}
+    </main>
+      </Dialog.Content>
+    </Dialog.Positioner>
+  </Portal>
+</Dialog>
+
+<style>
+  .modal-panel {
+    animation: modalIn 0.25s ease-out;
+  }
+
+  @keyframes modalIn {
+    from { opacity: 0; transform: scale(0.95) translateY(10px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+
+  .modal-backdrop {
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .spinner-large {
+    display: inline-block;
+    width: 3rem;
+    height: 3rem;
+    border: 4px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.75s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+</style>
