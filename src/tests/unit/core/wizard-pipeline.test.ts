@@ -31,7 +31,7 @@ import {
   expectRightAsync,
   expectLeftAsync,
   expectLeftTagAsync,
-} from '../../helpers/fp-ts.js';
+} from '../../helpers/effect.js';
 
 // =============================================================================
 // MOCK: Simulate a wizard adapter's unique behavior

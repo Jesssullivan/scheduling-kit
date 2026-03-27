@@ -9,7 +9,7 @@ import { createStripeAdapter } from '../../../payments/stripe.js';
 import type { PaymentAdapter } from '../../../payments/types.js';
 import { server } from '../../mocks/server.js';
 import { resetStripeMockState, configureStripeMock } from '../../mocks/handlers/index.js';
-import { expectRightAsync, expectLeftTagAsync } from '../../helpers/fp-ts.js';
+import { expectRightAsync, expectLeftTagAsync } from '../../helpers/effect.js';
 
 // MSW server lifecycle
 beforeAll(() => {
@@ -172,8 +172,7 @@ describe('Stripe Adapter', () => {
         })
       );
 
-      const result = await adapter.cancelIntent(intent.id)();
-      expect(E.isRight(result)).toBe(true);
+      await expectRightAsync(adapter.cancelIntent(intent.id));
     });
   });
 

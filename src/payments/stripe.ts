@@ -256,47 +256,45 @@ export const createStripeAdapter = (config: StripeAdapterConfig): PaymentAdapter
       ),
 
     parseWebhook: (payload) =>
-      pipe(
-        TE.tryCatch(
-          async () => {
-            const event = JSON.parse(payload) as {
-              type: string;
-              data: {
-                object: {
-                  id: string;
-                  amount: number;
-                  currency: string;
-                  created: number;
-                  metadata?: Record<string, string>;
-                  payment_intent?: string;
-                };
+      Effect.tryPromise({
+        try: async () => {
+          const event = JSON.parse(payload) as {
+            type: string;
+            data: {
+              object: {
+                id: string;
+                amount: number;
+                currency: string;
+                created: number;
+                metadata?: Record<string, string>;
+                payment_intent?: string;
               };
             };
+          };
 
-            const typeMap: Record<string, PaymentWebhookEvent['type']> = {
-              'payment_intent.succeeded': 'payment.completed',
-              'payment_intent.payment_failed': 'payment.failed',
-              'payment_intent.canceled': 'payment.cancelled',
-              'charge.refunded': 'refund.completed',
-              'charge.refund.updated': 'refund.completed',
-            };
+          const typeMap: Record<string, PaymentWebhookEvent['type']> = {
+            'payment_intent.succeeded': 'payment.completed',
+            'payment_intent.payment_failed': 'payment.failed',
+            'payment_intent.canceled': 'payment.cancelled',
+            'charge.refunded': 'refund.completed',
+            'charge.refund.updated': 'refund.completed',
+          };
 
-            const obj = event.data.object;
+          const obj = event.data.object;
 
-            return {
-              type: typeMap[event.type] ?? 'payment.failed',
-              transactionId: obj.id,
-              intentId: obj.payment_intent,
-              amount: obj.amount,
-              currency: obj.currency.toUpperCase(),
-              timestamp: new Date(obj.created * 1000).toISOString(),
-              metadata: obj.metadata,
-              raw: event,
-            } satisfies PaymentWebhookEvent;
-          },
-          (e) => Errors.payment('WEBHOOK_PARSE_FAILED', String(e), 'stripe', false)
-        )
-      ),
+          return {
+            type: typeMap[event.type] ?? 'payment.failed',
+            transactionId: obj.id,
+            intentId: obj.payment_intent,
+            amount: obj.amount,
+            currency: obj.currency.toUpperCase(),
+            timestamp: new Date(obj.created * 1000).toISOString(),
+            metadata: obj.metadata,
+            raw: event,
+          } satisfies PaymentWebhookEvent;
+        },
+        catch: (e) => Errors.payment('WEBHOOK_PARSE_FAILED', String(e), 'stripe', false),
+      }),
 
     getClientConfig: () => ({
       name: 'stripe',

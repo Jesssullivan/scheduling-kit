@@ -3,7 +3,7 @@
  * Manual payment methods (cash, zelle, check)
  */
 import { describe, it, expect } from 'vitest';
-import * as E from 'fp-ts/Either';
+import { expectSuccess, expectFailure } from './helpers/effect.js';
 import * as fc from 'fast-check';
 import {
   createManualPaymentAdapter,
@@ -38,22 +38,18 @@ describe('Manual Payment Adapters', () => {
           'Test'
         );
 
-        const result = await adapter.createIntent({
+        const intent = await expectSuccess(adapter.createIntent({
           amount: 5000,
           currency: 'USD',
           description: 'Test payment',
           idempotencyKey: 'idem_123',
-        })();
+        }));
 
-        expect(E.isRight(result)).toBe(true);
-        if (E.isRight(result)) {
-          const intent = result.right;
-          expect(intent.id).toMatch(/^manual_/);
-          expect(intent.amount).toBe(5000);
-          expect(intent.currency).toBe('USD');
-          expect(intent.status).toBe('pending');
-          expect(intent.processor).toBe('test');
-        }
+        expect(intent.id).toMatch(/^manual_/);
+        expect(intent.amount).toBe(5000);
+        expect(intent.currency).toBe('USD');
+        expect(intent.status).toBe('pending');
+        expect(intent.processor).toBe('test');
       });
 
       it('generates unique intent IDs', async () => {
@@ -65,16 +61,14 @@ describe('Manual Payment Adapters', () => {
 
         const ids = new Set<string>();
         for (let i = 0; i < 100; i++) {
-          const result = await adapter.createIntent({
+          const intent = await expectSuccess(adapter.createIntent({
             amount: 1000,
             currency: 'USD',
             description: 'test payment',
             idempotencyKey: `idem_${i}`,
-          })();
+          }));
 
-          if (E.isRight(result)) {
-            ids.add(result.right.id);
-          }
+          ids.add(intent.id);
         }
 
         expect(ids.size).toBe(100);
@@ -89,15 +83,11 @@ describe('Manual Payment Adapters', () => {
           'Test'
         );
 
-        const result = await adapter.capturePayment('manual_123')();
+        const payment = await expectSuccess(adapter.capturePayment('manual_123'));
 
-        expect(E.isRight(result)).toBe(true);
-        if (E.isRight(result)) {
-          const payment = result.right;
-          expect(payment.success).toBe(true);
-          expect(payment.transactionId).toBe('manual_123_pending');
-          expect(payment.processor).toBe('test');
-        }
+        expect(payment.success).toBe(true);
+        expect(payment.transactionId).toBe('manual_123_pending');
+        expect(payment.processor).toBe('test');
       });
     });
 
@@ -109,19 +99,15 @@ describe('Manual Payment Adapters', () => {
           'Test'
         );
 
-        const result = await adapter.refund({
+        const refund = await expectSuccess(adapter.refund({
           transactionId: 'txn_123',
           amount: 2500,
           reason: 'Customer request',
-        })();
+        }));
 
-        expect(E.isRight(result)).toBe(true);
-        if (E.isRight(result)) {
-          const refund = result.right;
-          expect(refund.refundId).toMatch(/^refund_/);
-          expect(refund.originalTransactionId).toBe('txn_123');
-          expect(refund.success).toBe(true);
-        }
+        expect(refund.refundId).toMatch(/^refund_/);
+        expect(refund.originalTransactionId).toBe('txn_123');
+        expect(refund.success).toBe(true);
       });
     });
 
@@ -133,11 +119,8 @@ describe('Manual Payment Adapters', () => {
           'Cash'
         );
 
-        const result = await adapter.isAvailable()();
-        expect(E.isRight(result)).toBe(true);
-        if (E.isRight(result)) {
-          expect(result.right).toBe(true);
-        }
+        const available = await expectSuccess(adapter.isAvailable());
+        expect(available).toBe(true);
       });
 
       it('returns false when no methods configured', async () => {
@@ -147,11 +130,8 @@ describe('Manual Payment Adapters', () => {
           'Empty'
         );
 
-        const result = await adapter.isAvailable()();
-        expect(E.isRight(result)).toBe(true);
-        if (E.isRight(result)) {
-          expect(result.right).toBe(false);
-        }
+        const available = await expectSuccess(adapter.isAvailable());
+        expect(available).toBe(false);
       });
     });
   });
@@ -274,17 +254,14 @@ describe('Property-based Payment Tests', () => {
         fc.asyncProperty(
           fc.integer({ min: 1, max: 1000000 }),
           async (amount) => {
-            const result = await adapter.createIntent({
+            const intent = await expectSuccess(adapter.createIntent({
               amount,
               currency: 'USD',
               description: 'test payment',
               idempotencyKey: `idem_${amount}_${Date.now()}`,
-            })();
+            }));
 
-            expect(E.isRight(result)).toBe(true);
-            if (E.isRight(result)) {
-              expect(result.right.amount).toBe(amount);
-            }
+            expect(intent.amount).toBe(amount);
           }
         ),
         { numRuns: 50 }
@@ -298,17 +275,14 @@ describe('Property-based Payment Tests', () => {
         fc.asyncProperty(
           fc.constantFrom(...currencies),
           async (currency) => {
-            const result = await adapter.createIntent({
+            const intent = await expectSuccess(adapter.createIntent({
               amount: 1000,
               currency,
               description: 'test payment',
               idempotencyKey: `idem_${currency}_${Date.now()}`,
-            })();
+            }));
 
-            expect(E.isRight(result)).toBe(true);
-            if (E.isRight(result)) {
-              expect(result.right.currency).toBe(currency);
-            }
+            expect(intent.currency).toBe(currency);
           }
         )
       );
@@ -321,26 +295,18 @@ describe('Payment Flow Integration', () => {
     const adapter = createCashAdapter();
 
     // Create intent
-    const intentResult = await adapter.createIntent({
+    const intent = await expectSuccess(adapter.createIntent({
       amount: 7500,
       currency: 'USD',
       description: '60min massage',
       idempotencyKey: 'idem_flow_test',
-    })();
+    }));
 
-    expect(E.isRight(intentResult)).toBe(true);
-    if (!E.isRight(intentResult)) return;
-
-    const intent = intentResult.right;
     expect(intent.status).toBe('pending');
 
     // Capture payment
-    const captureResult = await adapter.capturePayment(intent.id)();
+    const payment = await expectSuccess(adapter.capturePayment(intent.id));
 
-    expect(E.isRight(captureResult)).toBe(true);
-    if (!E.isRight(captureResult)) return;
-
-    const payment = captureResult.right;
     expect(payment.success).toBe(true);
   });
 
@@ -348,30 +314,22 @@ describe('Payment Flow Integration', () => {
     const adapter = createZelleAdapter('test@example.com');
 
     // Create and capture
-    const intentResult = await adapter.createIntent({
+    const intent = await expectSuccess(adapter.createIntent({
       amount: 10000,
       currency: 'USD',
       description: 'test payment',
       idempotencyKey: 'idem_refund_test',
-    })();
+    }));
 
-    if (!E.isRight(intentResult)) return;
-    const intent = intentResult.right;
-
-    const captureResult = await adapter.capturePayment(intent.id)();
-    if (!E.isRight(captureResult)) return;
+    const capture = await expectSuccess(adapter.capturePayment(intent.id));
 
     // Refund
-    const refundResult = await adapter.refund({
-      transactionId: captureResult.right.transactionId,
+    const refund = await expectSuccess(adapter.refund({
+      transactionId: capture.transactionId,
       amount: 5000,
       reason: 'Partial refund',
-    })();
+    }));
 
-    expect(E.isRight(refundResult)).toBe(true);
-    if (!E.isRight(refundResult)) return;
-
-    const refund = refundResult.right;
     expect(refund.success).toBe(true);
   });
 });

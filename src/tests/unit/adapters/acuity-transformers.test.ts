@@ -16,7 +16,7 @@ import {
   expectRightAsync,
   expectLeftAsync,
   expectLeftTagAsync,
-} from '../../helpers/fp-ts.js';
+} from '../../helpers/effect.js';
 
 // MSW server lifecycle
 beforeAll(() => {
@@ -128,7 +128,7 @@ describe('Acuity Adapter Transformers', () => {
   describe('toBooking (appointment transformer)', () => {
     it('transforms appointment to Booking', async () => {
       // Create an appointment first
-      const bookingResult = await adapter.createBooking({
+      const booking = await expectRightAsync(adapter.createBooking({
         serviceId: '12345',
         providerId: '67890',
         datetime: '2026-02-15T14:00:00-05:00',
@@ -138,11 +138,9 @@ describe('Acuity Adapter Transformers', () => {
           email: 'john@example.com',
         },
         idempotencyKey: 'test-key-123',
-      })();
+      }));
 
-      expect(E.isRight(bookingResult)).toBe(true);
-      if (E.isRight(bookingResult)) {
-        const booking = bookingResult.right;
+      {
 
         expect(booking.id).toBeDefined();
         expect(typeof booking.id).toBe('string');
@@ -297,11 +295,11 @@ describe('Acuity Adapter Error Handling', () => {
 
     // After server error, it should return error
     // Note: with retry logic it may succeed on retry
-    const result = await adapter.getServices()();
-
     // Result could be success (retry) or failure
     // Just verify it completes without hanging
-    expect(result).toBeDefined();
+    const { Effect, Exit } = await import('effect');
+    const exit = await Effect.runPromiseExit(adapter.getServices());
+    expect(exit).toBeDefined();
   });
 
   it('returns NOT_FOUND for unknown service', async () => {

@@ -33,7 +33,7 @@ import {
   expectRightAsync,
   expectLeftAsync,
   expectLeftTagAsync,
-} from '../../helpers/fp-ts.js';
+} from '../../helpers/effect.js';
 
 // =============================================================================
 // MOCK ADAPTERS

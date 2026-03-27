@@ -117,8 +117,10 @@ export const withRetry = <A>(
   );
 
   const schedule = pipe(
-    Schedule.exponential(Duration.millis(initialDelayMs), backoffMultiplier),
-    Schedule.either(Schedule.recurs(maxAttempts - 1)),
+    Schedule.intersect(
+      Schedule.exponential(Duration.millis(initialDelayMs), backoffMultiplier),
+      Schedule.recurs(maxAttempts - 1),
+    ),
     Schedule.whileInput<SchedulingError>(shouldRetry),
   );
 
