@@ -8,8 +8,7 @@
  * Feature-flagged: only active when SCHEDULING_BACKEND=homegrown
  */
 
-import * as TE from 'fp-ts/TaskEither';
-import { pipe } from 'fp-ts/function';
+import { Effect } from 'effect';
 
 import type { SchedulingAdapter } from './types.js';
 import type {
@@ -74,15 +73,17 @@ export const createHomegrownAdapter = (config: HomegrownAdapterConfig): Scheduli
   // Helpers
   // ---------------------------------------------------------------------------
 
-  /** Wrap an async operation in TaskEither */
+  /** Wrap an async operation in Effect */
   const fromAsync = <A>(fn: () => Promise<A>): SchedulingResult<A> =>
-    TE.tryCatch(fn, (e) =>
-      Errors.infrastructure(
-        'UNKNOWN',
-        e instanceof Error ? e.message : 'Unknown error',
-        e instanceof Error ? e : undefined,
-      ),
-    );
+    Effect.tryPromise({
+      try: fn,
+      catch: (e) =>
+        Errors.infrastructure(
+          'UNKNOWN',
+          e instanceof Error ? e.message : 'Unknown error',
+          e instanceof Error ? e : undefined,
+        ),
+    });
 
   /** Resolve a service by UUID or acuityId */
   const resolveService = async (serviceId: string): Promise<any> => {
@@ -528,9 +529,9 @@ export const createHomegrownAdapter = (config: HomegrownAdapterConfig): Scheduli
       paymentRef: string,
       paymentProcessor: string,
     ) =>
-      pipe(
+      Effect.flatMap(
         adapter.createBooking(request),
-        TE.chain((booking) =>
+        (booking) =>
           fromAsync(async () => {
             const { bookings: bookingsTable } = await import(
               '@tummycrypt/tinyland-auth-pg/booking-schema'

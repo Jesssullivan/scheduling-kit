@@ -5,7 +5,7 @@
  * Cal.com API: https://cal.com/docs/api-reference
  * Self-hosted option available for full control
  */
-import * as TE from 'fp-ts/TaskEither';
+import { Effect } from 'effect';
 import type { SchedulingAdapter } from './types.js';
 import type {
 	Service,
@@ -16,8 +16,8 @@ import type {
 	BookingRequest,
 	SlotReservation,
 	ClientInfo,
-	SchedulingError,
 } from '../core/types.js';
+import type { SchedulingResult } from '../core/types.js';
 import { Errors } from '../core/types.js';
 
 export interface CalComConfig {
@@ -42,8 +42,8 @@ export interface CalComConfig {
  * - Open source / self-hostable
  */
 export const createCalComAdapter = (_config: CalComConfig): SchedulingAdapter => {
-	const notImplemented = <T>(): TE.TaskEither<SchedulingError, T> =>
-		TE.left(
+	const notImplemented = <T>(): SchedulingResult<T> =>
+		Effect.fail(
 			Errors.infrastructure(
 				'UNKNOWN',
 				'Cal.com adapter not yet implemented. Currently using Acuity.',

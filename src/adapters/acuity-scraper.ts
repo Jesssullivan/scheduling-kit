@@ -26,11 +26,18 @@ const getChromium = async () => {
     }
   }
 };
-import * as E from 'fp-ts/Either';
-import * as TE from 'fp-ts/TaskEither';
-import { pipe } from 'fp-ts/function';
-import type { Service, Provider, TimeSlot, AcuityError, InfrastructureError } from '../core/types.js';
+import { Effect } from 'effect';
+import type { Service, Provider, TimeSlot, AcuityError, InfrastructureError, SchedulingResult } from '../core/types.js';
 import { Errors } from '../core/types.js';
+
+// Keep E for internal class methods (deprecated, not worth migrating)
+const E = {
+  right: <A>(a: A) => ({ _tag: 'Right' as const, right: a }),
+  left: <E>(e: E) => ({ _tag: 'Left' as const, left: e }),
+  isLeft: <E, A>(e: { _tag: 'Left'; left: E } | { _tag: 'Right'; right: A }): e is { _tag: 'Left'; left: E } =>
+    e._tag === 'Left',
+};
+type Either<E, A> = { _tag: 'Left'; left: E } | { _tag: 'Right'; right: A };
 
 // =============================================================================
 // TYPES
@@ -415,24 +422,38 @@ export class AcuityScraper {
 // =============================================================================
 
 /**
- * Create a scraper instance with TaskEither wrapper
+ * Create a scraper instance with Effect wrapper
+ *
+ * @deprecated Use extract-business.ts for services and wizard steps for availability/slots.
  */
 export const createScraperAdapter = (config: ScraperConfig) => {
   const scraper = new AcuityScraper(config);
 
+  /** Convert the scraper's Promise<Either<E, A>> to Effect<A, E> */
+  const fromScraper = <E2, A>(
+    fn: () => Promise<Either<E2, A>>,
+    label: string,
+  ): Effect.Effect<A, AcuityError | InfrastructureError> =>
+    Effect.flatMap(
+      Effect.tryPromise({
+        try: fn,
+        catch: (error) => Errors.acuity('SCRAPE_FAILED', error instanceof Error ? error.message : `${label} failed`),
+      }),
+      (result) =>
+        E.isLeft(result)
+          ? Effect.fail(result.left as AcuityError | InfrastructureError)
+          : Effect.succeed(result.right),
+    );
+
   return {
     /**
      * Get all services
+     * @deprecated Always returns [] on Acuity's React SPA.
      */
-    getServices: (): TE.TaskEither<AcuityError | InfrastructureError, Service[]> =>
-      pipe(
-        TE.tryCatch(
-          () => scraper.scrapeServices(),
-          (error) =>
-            Errors.acuity('SCRAPE_FAILED', error instanceof Error ? error.message : 'Unknown error')
-        ),
-        TE.flatMap((result) => TE.fromEither(result)),
-        TE.map((scraped) =>
+    getServices: (): SchedulingResult<Service[]> =>
+      Effect.map(
+        fromScraper(() => scraper.scrapeServices(), 'scrapeServices'),
+        (scraped) =>
           scraped.map(
             (s): Service => ({
               id: s.id,
@@ -445,40 +466,29 @@ export const createScraperAdapter = (config: ScraperConfig) => {
               active: true,
             })
           )
-        )
       ),
 
     /**
      * Get available dates for a service
+     * @deprecated Use readAvailableDates() from middleware/steps/.
      */
     getAvailableDates: (
       serviceId: string,
       month?: string
-    ): TE.TaskEither<AcuityError | InfrastructureError, string[]> =>
-      pipe(
-        TE.tryCatch(
-          () => scraper.scrapeAvailableDates(serviceId, month),
-          (error) =>
-            Errors.acuity('SCRAPE_FAILED', error instanceof Error ? error.message : 'Unknown error')
-        ),
-        TE.flatMap((result) => TE.fromEither(result))
-      ),
+    ): SchedulingResult<string[]> =>
+      fromScraper(() => scraper.scrapeAvailableDates(serviceId, month), 'scrapeAvailableDates'),
 
     /**
      * Get available time slots for a date
+     * @deprecated Use readTimeSlots() from middleware/steps/.
      */
     getTimeSlots: (
       serviceId: string,
       date: string
-    ): TE.TaskEither<AcuityError | InfrastructureError, TimeSlot[]> =>
-      pipe(
-        TE.tryCatch(
-          () => scraper.scrapeTimeSlots(serviceId, date),
-          (error) =>
-            Errors.acuity('SCRAPE_FAILED', error instanceof Error ? error.message : 'Unknown error')
-        ),
-        TE.flatMap((result) => TE.fromEither(result)),
-        TE.map((slots) =>
+    ): SchedulingResult<TimeSlot[]> =>
+      Effect.map(
+        fromScraper(() => scraper.scrapeTimeSlots(serviceId, date), 'scrapeTimeSlots'),
+        (slots) =>
           slots
             .filter((s) => s.available)
             .map(
@@ -487,7 +497,6 @@ export const createScraperAdapter = (config: ScraperConfig) => {
                 available: s.available,
               })
             )
-        )
       ),
 
     /**
@@ -513,36 +522,34 @@ export const createScraperAdapter = (config: ScraperConfig) => {
 
 /**
  * One-shot scrape of all services (opens and closes browser)
+ * @deprecated Use fetchBusinessData() from extract-business.ts
  */
-export const scrapeServicesOnce = async (
+export const scrapeServicesOnce = (
   baseUrl: string
-): Promise<E.Either<AcuityError | InfrastructureError, Service[]>> => {
-  const adapter = createScraperAdapter({ baseUrl });
-
-  try {
-    await adapter.init();
-    const result = await adapter.getServices()();
-    return result;
-  } finally {
-    await adapter.close();
-  }
-};
+): SchedulingResult<Service[]> =>
+  Effect.acquireUseRelease(
+    Effect.tryPromise({
+      try: async () => { const a = createScraperAdapter({ baseUrl }); await a.init(); return a; },
+      catch: (e) => Errors.infrastructure('UNKNOWN', e instanceof Error ? e.message : 'Failed to init scraper'),
+    }),
+    (adapter) => adapter.getServices(),
+    (adapter) => Effect.promise(() => adapter.close()),
+  );
 
 /**
  * One-shot scrape of availability (opens and closes browser)
+ * @deprecated Use readTimeSlots() from middleware/steps/
  */
-export const scrapeAvailabilityOnce = async (
+export const scrapeAvailabilityOnce = (
   baseUrl: string,
   serviceId: string,
   date: string
-): Promise<E.Either<AcuityError | InfrastructureError, TimeSlot[]>> => {
-  const adapter = createScraperAdapter({ baseUrl });
-
-  try {
-    await adapter.init();
-    const result = await adapter.getTimeSlots(serviceId, date)();
-    return result;
-  } finally {
-    await adapter.close();
-  }
-};
+): SchedulingResult<TimeSlot[]> =>
+  Effect.acquireUseRelease(
+    Effect.tryPromise({
+      try: async () => { const a = createScraperAdapter({ baseUrl }); await a.init(); return a; },
+      catch: (e) => Errors.infrastructure('UNKNOWN', e instanceof Error ? e.message : 'Failed to init scraper'),
+    }),
+    (adapter) => adapter.getTimeSlots(serviceId, date),
+    (adapter) => Effect.promise(() => adapter.close()),
+  );
