@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
-import * as E from 'fp-ts/Either';
+
 import { createAcuityAdapter } from '../../../adapters/acuity.js';
 import type { SchedulingAdapter } from '../../../adapters/types.js';
 import { server } from '../../mocks/server.js';

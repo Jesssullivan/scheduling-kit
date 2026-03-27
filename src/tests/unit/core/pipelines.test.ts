@@ -4,8 +4,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import * as TE from 'fp-ts/TaskEither';
-import * as E from 'fp-ts/Either';
+import { Effect, Exit, Cause } from 'effect';
+
 import {
   completeBookingWithAltPayment,
   getAvailabilityWithService,
@@ -43,51 +43,51 @@ const createMockScheduler = (): SchedulingAdapter => ({
   name: 'mock',
 
   // Services
-  getServices: vi.fn(() => TE.right([createService()])),
-  getService: vi.fn((id) => TE.right(createService({ id }))),
+  getServices: vi.fn(() => Effect.succeed([createService()])),
+  getService: vi.fn((id) => Effect.succeed(createService({ id }))),
 
   // Providers
-  getProviders: vi.fn(() => TE.right([createProvider()])),
-  getProvider: vi.fn((id) => TE.right(createProvider({ id }))),
-  getProvidersForService: vi.fn(() => TE.right([createProvider()])),
+  getProviders: vi.fn(() => Effect.succeed([createProvider()])),
+  getProvider: vi.fn((id) => Effect.succeed(createProvider({ id }))),
+  getProvidersForService: vi.fn(() => Effect.succeed([createProvider()])),
 
   // Availability
   getAvailableDates: vi.fn(() =>
-    TE.right([
+    Effect.succeed([
       { date: '2026-02-15', slots: 5 },
       { date: '2026-02-16', slots: 3 },
     ])
   ),
-  getAvailableSlots: vi.fn(() => TE.right(createDaySlots('2026-02-15', '67890'))),
-  checkSlotAvailability: vi.fn(() => TE.right(true)),
+  getAvailableSlots: vi.fn(() => Effect.succeed(createDaySlots('2026-02-15', '67890'))),
+  checkSlotAvailability: vi.fn(() => Effect.succeed(true)),
 
   // Reservations
-  createReservation: vi.fn(() => TE.right(createReservation())),
-  releaseReservation: vi.fn(() => TE.right(undefined)),
+  createReservation: vi.fn(() => Effect.succeed(createReservation())),
+  releaseReservation: vi.fn(() => Effect.succeed(undefined)),
 
   // Bookings
-  createBooking: vi.fn(() => TE.right(createBooking())),
+  createBooking: vi.fn(() => Effect.succeed(createBooking())),
   createBookingWithPaymentRef: vi.fn((_, ref, processor) =>
-    TE.right(createBooking({ paymentRef: `[${processor.toUpperCase()}] Transaction: ${ref}` }))
+    Effect.succeed(createBooking({ paymentRef: `[${processor.toUpperCase()}] Transaction: ${ref}` }))
   ),
-  getBooking: vi.fn(() => TE.right(createBooking())),
-  cancelBooking: vi.fn(() => TE.right(undefined)),
-  rescheduleBooking: vi.fn(() => TE.right(createBooking())),
+  getBooking: vi.fn(() => Effect.succeed(createBooking())),
+  cancelBooking: vi.fn(() => Effect.succeed(undefined)),
+  rescheduleBooking: vi.fn(() => Effect.succeed(createBooking())),
 
   // Clients
-  findOrCreateClient: vi.fn(() => TE.right({ id: 'client-1', isNew: true })),
-  getClientByEmail: vi.fn(() => TE.right(null)),
+  findOrCreateClient: vi.fn(() => Effect.succeed({ id: 'client-1', isNew: true })),
+  getClientByEmail: vi.fn(() => Effect.succeed(null)),
 });
 
 const createMockPaymentAdapter = (name = 'cash'): PaymentAdapter => ({
   name,
   displayName: name.charAt(0).toUpperCase() + name.slice(1),
-  isAvailable: vi.fn(() => TE.right(true)),
-  createIntent: vi.fn(() => TE.right(createPaymentIntent())),
-  capturePayment: vi.fn(() => TE.right(createPaymentResult())),
-  cancelIntent: vi.fn(() => TE.right(undefined)),
+  isAvailable: vi.fn(() => Effect.succeed(true)),
+  createIntent: vi.fn(() => Effect.succeed(createPaymentIntent())),
+  capturePayment: vi.fn(() => Effect.succeed(createPaymentResult())),
+  cancelIntent: vi.fn(() => Effect.succeed(undefined)),
   refund: vi.fn(() =>
-    TE.right({
+    Effect.succeed({
       success: true,
       refundId: 'refund_12345',
       originalTransactionId: 'txn_test_12345',
@@ -96,9 +96,9 @@ const createMockPaymentAdapter = (name = 'cash'): PaymentAdapter => ({
       timestamp: new Date().toISOString(),
     })
   ),
-  verifyWebhook: vi.fn(() => TE.right(true)),
+  verifyWebhook: vi.fn(() => Effect.succeed(true)),
   parseWebhook: vi.fn(() =>
-    TE.right({
+    Effect.succeed({
       type: 'payment.completed' as const,
       intentId: 'pi_test_12345',
       transactionId: 'txn_test_12345',
@@ -183,7 +183,7 @@ describe('completeBookingWithAltPayment', () => {
   });
 
   it('returns reservation error when slot is taken', async () => {
-    vi.mocked(scheduler.checkSlotAvailability).mockReturnValue(TE.right(false));
+    vi.mocked(scheduler.checkSlotAvailability).mockReturnValue(Effect.succeed(false));
 
     const error = await expectLeftTagAsync(
       completeBookingWithAltPayment(ctx, input),
@@ -198,7 +198,7 @@ describe('completeBookingWithAltPayment', () => {
 
   it('releases reservation on payment intent failure', async () => {
     vi.mocked(paymentAdapter.createIntent).mockReturnValue(
-      TE.left(Errors.payment('INTENT_FAILED', 'Failed to create intent', 'cash'))
+      Effect.fail(Errors.payment('INTENT_FAILED', 'Failed to create intent', 'cash'))
     );
 
     await expectLeftAsync(completeBookingWithAltPayment(ctx, input));
@@ -209,7 +209,7 @@ describe('completeBookingWithAltPayment', () => {
 
   it('releases reservation on payment capture failure', async () => {
     vi.mocked(paymentAdapter.capturePayment).mockReturnValue(
-      TE.left(Errors.payment('CAPTURE_FAILED', 'Failed to capture payment', 'cash'))
+      Effect.fail(Errors.payment('CAPTURE_FAILED', 'Failed to capture payment', 'cash'))
     );
 
     await expectLeftAsync(completeBookingWithAltPayment(ctx, input));
@@ -219,7 +219,7 @@ describe('completeBookingWithAltPayment', () => {
 
   it('refunds payment on booking creation failure', async () => {
     vi.mocked(scheduler.createBookingWithPaymentRef).mockReturnValue(
-      TE.left(Errors.acuity('BOOKING_FAILED', 'Failed to create booking'))
+      Effect.fail(Errors.acuity('BOOKING_FAILED', 'Failed to create booking'))
     );
 
     await expectLeftAsync(completeBookingWithAltPayment(ctx, input));
@@ -231,7 +231,7 @@ describe('completeBookingWithAltPayment', () => {
 
   it('continues without reservation if reservation fails', async () => {
     vi.mocked(scheduler.createReservation).mockReturnValue(
-      TE.left(Errors.reservation('BLOCK_FAILED', 'Could not create block'))
+      Effect.fail(Errors.reservation('BLOCK_FAILED', 'Could not create block'))
     );
 
     const result = await expectRightAsync(completeBookingWithAltPayment(ctx, input));
@@ -284,7 +284,7 @@ describe('getAvailabilityWithService', () => {
 
   it('propagates service not found error', async () => {
     vi.mocked(scheduler.getService).mockReturnValue(
-      TE.left(Errors.acuity('NOT_FOUND', 'Service not found'))
+      Effect.fail(Errors.acuity('NOT_FOUND', 'Service not found'))
     );
 
     const error = await expectLeftTagAsync(
@@ -326,7 +326,7 @@ describe('getTimeSlotsWithService', () => {
 
   it('propagates availability fetch error', async () => {
     vi.mocked(scheduler.getAvailableSlots).mockReturnValue(
-      TE.left(Errors.acuity('API_ERROR', 'Failed to fetch slots'))
+      Effect.fail(Errors.acuity('API_ERROR', 'Failed to fetch slots'))
     );
 
     const error = await expectLeftAsync(
@@ -376,7 +376,7 @@ describe('cancelBookingWithRefund', () => {
 
   it('cancels booking with refund when payment ref exists', async () => {
     vi.mocked(scheduler.getBooking).mockReturnValue(
-      TE.right(
+      Effect.succeed(
         createBooking({
           paymentRef: '[CASH] Transaction: cash_12345',
         })
@@ -400,7 +400,7 @@ describe('cancelBookingWithRefund', () => {
 
   it('returns success with failed refund when processor not found', async () => {
     vi.mocked(scheduler.getBooking).mockReturnValue(
-      TE.right(
+      Effect.succeed(
         createBooking({
           paymentRef: '[UNKNOWN] Transaction: unknown_12345',
         })
@@ -420,7 +420,7 @@ describe('cancelBookingWithRefund', () => {
 
   it('returns success with failed refund when transaction ID not found', async () => {
     vi.mocked(scheduler.getBooking).mockReturnValue(
-      TE.right(
+      Effect.succeed(
         createBooking({
           paymentRef: '[CASH] No transaction here',
         })
@@ -440,7 +440,7 @@ describe('cancelBookingWithRefund', () => {
 
   it('propagates booking not found error', async () => {
     vi.mocked(scheduler.getBooking).mockReturnValue(
-      TE.left(Errors.acuity('NOT_FOUND', 'Booking not found'))
+      Effect.fail(Errors.acuity('NOT_FOUND', 'Booking not found'))
     );
 
     const error = await expectLeftTagAsync(

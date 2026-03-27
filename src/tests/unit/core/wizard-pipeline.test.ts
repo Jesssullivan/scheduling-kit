@@ -10,8 +10,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
-import * as TE from 'fp-ts/TaskEither';
-import * as E from 'fp-ts/Either';
+import { Effect, Exit, Cause } from 'effect';
+
 import {
   createSchedulingKit,
   type SchedulingKit,
@@ -48,51 +48,51 @@ const createMockWizardAdapter = (overrides?: Partial<SchedulingAdapter>): Schedu
   name: 'acuity-wizard',
 
   // Read ops (scraper delegation)
-  getServices: vi.fn(() => TE.right([
+  getServices: vi.fn(() => Effect.succeed([
     createService({ id: '82429463', name: 'TMD 1st Visit/Consultation' }),
     createService({ id: '82429464', name: 'TMD 30min', price: 10000, duration: 30 }),
   ])),
   getService: vi.fn((serviceId: string) =>
-    TE.right(createService({ id: serviceId, name: 'TMD 1st Visit/Consultation' }))
+    Effect.succeed(createService({ id: serviceId, name: 'TMD 1st Visit/Consultation' }))
   ),
-  getProviders: vi.fn(() => TE.right([{
+  getProviders: vi.fn(() => Effect.succeed([{
     id: '1',
     name: 'Jennifer Whitaker',
     email: 'jen@massageithaca.com',
     description: 'LMT, BA - TMD Massage Specialist',
     timezone: 'America/New_York',
   }])),
-  getProvider: vi.fn(() => TE.right({
+  getProvider: vi.fn(() => Effect.succeed({
     id: '1',
     name: 'Jennifer Whitaker',
     email: 'jen@massageithaca.com',
     description: 'LMT, BA - TMD Massage Specialist',
     timezone: 'America/New_York',
   })),
-  getProvidersForService: vi.fn(() => TE.right([{
+  getProvidersForService: vi.fn(() => Effect.succeed([{
     id: '1',
     name: 'Jennifer Whitaker',
     email: 'jen@massageithaca.com',
     description: 'LMT, BA - TMD Massage Specialist',
     timezone: 'America/New_York',
   }])),
-  getAvailableDates: vi.fn(() => TE.right([
+  getAvailableDates: vi.fn(() => Effect.succeed([
     { date: '2026-03-02', slots: 3 },
     { date: '2026-03-05', slots: 5 },
     { date: '2026-03-09', slots: 2 },
   ])),
-  getAvailableSlots: vi.fn(() => TE.right(createDaySlots('2026-03-02', '1'))),
-  checkSlotAvailability: vi.fn(() => TE.right(true)),
+  getAvailableSlots: vi.fn(() => Effect.succeed(createDaySlots('2026-03-02', '1'))),
+  checkSlotAvailability: vi.fn(() => Effect.succeed(true)),
 
   // Reservation: BLOCK_FAILED (wizard adapter doesn't support reservations)
   createReservation: vi.fn(() =>
-    TE.left(Errors.reservation('BLOCK_FAILED', 'Reservations not supported by wizard adapter'))
+    Effect.fail(Errors.reservation('BLOCK_FAILED', 'Reservations not supported by wizard adapter'))
   ),
-  releaseReservation: vi.fn(() => TE.right(undefined)),
+  releaseReservation: vi.fn(() => Effect.succeed(undefined)),
 
   // Write ops (Effect middleware delegation)
   createBooking: vi.fn((request) =>
-    TE.right(createBooking({
+    Effect.succeed(createBooking({
       serviceId: request.serviceId,
       datetime: request.datetime,
       client: request.client,
@@ -101,7 +101,7 @@ const createMockWizardAdapter = (overrides?: Partial<SchedulingAdapter>): Schedu
     }))
   ),
   createBookingWithPaymentRef: vi.fn((request, paymentRef, processor) =>
-    TE.right(createBooking({
+    Effect.succeed(createBooking({
       serviceId: request.serviceId,
       datetime: request.datetime,
       client: request.client,
@@ -111,20 +111,20 @@ const createMockWizardAdapter = (overrides?: Partial<SchedulingAdapter>): Schedu
     }))
   ),
   getBooking: vi.fn(() =>
-    TE.left(Errors.acuity('NOT_IMPLEMENTED', 'Get booking not yet supported via wizard'))
+    Effect.fail(Errors.acuity('NOT_IMPLEMENTED', 'Get booking not yet supported via wizard'))
   ),
   cancelBooking: vi.fn(() =>
-    TE.left(Errors.acuity('NOT_IMPLEMENTED', 'Cancel not yet supported via wizard'))
+    Effect.fail(Errors.acuity('NOT_IMPLEMENTED', 'Cancel not yet supported via wizard'))
   ),
   rescheduleBooking: vi.fn(() =>
-    TE.left(Errors.acuity('NOT_IMPLEMENTED', 'Reschedule not yet supported via wizard'))
+    Effect.fail(Errors.acuity('NOT_IMPLEMENTED', 'Reschedule not yet supported via wizard'))
   ),
 
   // Client pass-through
   findOrCreateClient: vi.fn((client) =>
-    TE.right({ id: `local-${client.email}`, isNew: true })
+    Effect.succeed({ id: `local-${client.email}`, isNew: true })
   ),
-  getClientByEmail: vi.fn(() => TE.right(null)),
+  getClientByEmail: vi.fn(() => Effect.succeed(null)),
 
   ...overrides,
 });
@@ -135,12 +135,12 @@ const createMockWizardAdapter = (overrides?: Partial<SchedulingAdapter>): Schedu
 const createMockAltPaymentAdapter = (name = 'cash'): PaymentAdapter => ({
   name,
   displayName: name === 'cash' ? 'Cash' : 'Venmo',
-  isAvailable: vi.fn(() => TE.right(true)),
-  createIntent: vi.fn(() => TE.right(createPaymentIntent({ processor: name }))),
-  capturePayment: vi.fn(() => TE.right(createPaymentResult({ processor: name, success: true }))),
-  cancelIntent: vi.fn(() => TE.right(undefined)),
+  isAvailable: vi.fn(() => Effect.succeed(true)),
+  createIntent: vi.fn(() => Effect.succeed(createPaymentIntent({ processor: name }))),
+  capturePayment: vi.fn(() => Effect.succeed(createPaymentResult({ processor: name, success: true }))),
+  cancelIntent: vi.fn(() => Effect.succeed(undefined)),
   refund: vi.fn(() =>
-    TE.right({
+    Effect.succeed({
       success: true,
       refundId: 'refund_12345',
       originalTransactionId: 'txn_test_12345',
@@ -149,9 +149,9 @@ const createMockAltPaymentAdapter = (name = 'cash'): PaymentAdapter => ({
       timestamp: new Date().toISOString(),
     })
   ),
-  verifyWebhook: vi.fn(() => TE.right(true)),
+  verifyWebhook: vi.fn(() => Effect.succeed(true)),
   parseWebhook: vi.fn(() =>
-    TE.right({
+    Effect.succeed({
       type: 'payment.completed' as const,
       transactionId: 'txn_test_12345',
       intentId: 'pi_test_12345',
@@ -248,7 +248,7 @@ describe('Wizard Adapter + Pipeline Integration', () => {
 
     it('propagates scraper NOT_FOUND to pipeline caller', async () => {
       vi.mocked(wizardAdapter.getService).mockReturnValue(
-        TE.left(Errors.acuity('NOT_FOUND', 'Service 99999 not found'))
+        Effect.fail(Errors.acuity('NOT_FOUND', 'Service 99999 not found'))
       );
 
       const error = await expectLeftTagAsync(
@@ -349,7 +349,7 @@ describe('Wizard Adapter + Pipeline Integration', () => {
     });
 
     it('returns ReservationError when slot is taken', async () => {
-      vi.mocked(wizardAdapter.checkSlotAvailability).mockReturnValue(TE.right(false));
+      vi.mocked(wizardAdapter.checkSlotAvailability).mockReturnValue(Effect.succeed(false));
 
       const error = await expectLeftTagAsync(
         kit.completeBooking(createBookingRequest(), 'cash'),
@@ -363,7 +363,7 @@ describe('Wizard Adapter + Pipeline Integration', () => {
 
     it('does not refund when payment intent fails (no money captured yet)', async () => {
       vi.mocked(cashAdapter.createIntent).mockReturnValue(
-        TE.left(Errors.payment('INTENT_FAILED', 'Card declined', 'cash'))
+        Effect.fail(Errors.payment('INTENT_FAILED', 'Card declined', 'cash'))
       );
 
       await expectLeftTagAsync(
@@ -377,7 +377,7 @@ describe('Wizard Adapter + Pipeline Integration', () => {
 
     it('does not refund when payment capture fails (no money captured yet)', async () => {
       vi.mocked(cashAdapter.capturePayment).mockReturnValue(
-        TE.left(Errors.payment('CAPTURE_FAILED', 'Capture failed', 'cash'))
+        Effect.fail(Errors.payment('CAPTURE_FAILED', 'Capture failed', 'cash'))
       );
 
       await expectLeftTagAsync(
@@ -391,7 +391,7 @@ describe('Wizard Adapter + Pipeline Integration', () => {
 
     it('refunds payment when wizard booking creation fails (AcuityError)', async () => {
       vi.mocked(wizardAdapter.createBookingWithPaymentRef).mockReturnValue(
-        TE.left(Errors.acuity('BOOKING_FAILED', 'Wizard could not complete booking'))
+        Effect.fail(Errors.acuity('BOOKING_FAILED', 'Wizard could not complete booking'))
       );
 
       const error = await expectLeftAsync(
@@ -410,7 +410,7 @@ describe('Wizard Adapter + Pipeline Integration', () => {
 
     it('refunds venmo payment when wizard booking creation fails', async () => {
       vi.mocked(wizardAdapter.createBookingWithPaymentRef).mockReturnValue(
-        TE.left(Errors.acuity('BOOKING_FAILED', 'Wizard timed out'))
+        Effect.fail(Errors.acuity('BOOKING_FAILED', 'Wizard timed out'))
       );
 
       await expectLeftAsync(

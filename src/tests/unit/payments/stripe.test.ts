@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest';
-import * as E from 'fp-ts/Either';
+
 import { createStripeAdapter } from '../../../payments/stripe.js';
 import type { PaymentAdapter } from '../../../payments/types.js';
 import { server } from '../../mocks/server.js';
