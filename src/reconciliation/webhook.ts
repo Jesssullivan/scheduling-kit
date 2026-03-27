@@ -3,9 +3,7 @@
  * Verify and parse Acuity webhook payloads
  */
 
-import * as TE from 'fp-ts/TaskEither';
-import * as E from 'fp-ts/Either';
-import { pipe } from 'fp-ts/function';
+import { Effect, pipe } from 'effect';
 import type { SchedulingResult } from '../core/types.js';
 import { Errors } from '../core/types.js';
 import type { AcuityWebhookPayload, AcuityAppointment, AcuityWebhookEventType } from './types.js';
@@ -122,29 +120,27 @@ export const fetchAcuityAppointment = (
   config: WebhookConfig,
   appointmentId: number
 ): SchedulingResult<AcuityAppointment> =>
-  pipe(
-    TE.tryCatch(
-      async () => {
-        const auth = Buffer.from(`${config.userId}:${config.apiKey}`).toString('base64');
-        const response = await fetch(
-          `https://acuityscheduling.com/api/v1/appointments/${appointmentId}`,
-          {
-            headers: {
-              'Authorization': `Basic ${auth}`,
-              'Content-Type': 'application/json',
-            },
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error(`Acuity API error: ${response.status}`);
+  Effect.tryPromise({
+    try: async () => {
+      const auth = Buffer.from(`${config.userId}:${config.apiKey}`).toString('base64');
+      const response = await fetch(
+        `https://acuityscheduling.com/api/v1/appointments/${appointmentId}`,
+        {
+          headers: {
+            'Authorization': `Basic ${auth}`,
+            'Content-Type': 'application/json',
+          },
         }
+      );
 
-        return response.json() as Promise<AcuityAppointment>;
-      },
-      (e) => Errors.acuity('FETCH_FAILED', String(e), 500, `/appointments/${appointmentId}`)
-    )
-  );
+      if (!response.ok) {
+        throw new Error(`Acuity API error: ${response.status}`);
+      }
+
+      return response.json() as Promise<AcuityAppointment>;
+    },
+    catch: (e) => Errors.acuity('FETCH_FAILED', String(e), 500, `/appointments/${appointmentId}`),
+  });
 
 // =============================================================================
 // WEBHOOK HANDLER
