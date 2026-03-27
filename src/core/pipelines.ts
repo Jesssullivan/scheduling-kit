@@ -1,11 +1,9 @@
 /**
  * Orchestration Pipelines
- * Monadic composition of scheduling + payment flows
+ * Effect-based composition of scheduling + payment flows
  */
 
-import * as TE from 'fp-ts/TaskEither';
-import * as E from 'fp-ts/Either';
-import { pipe } from 'fp-ts/function';
+import { Effect, pipe } from 'effect';
 import type {
   SchedulingResult,
   BookingRequest,
@@ -93,57 +91,40 @@ export const completeBookingWithAltPayment = (
 
   const paymentAdapter = payments.get(paymentMethod);
   if (!paymentAdapter) {
-    return TE.left(Errors.payment('INVALID_METHOD', `Unknown payment method: ${paymentMethod}`, paymentMethod, false));
+    return Effect.fail(Errors.payment('INVALID_METHOD', `Unknown payment method: ${paymentMethod}`, paymentMethod, false));
   }
 
-  // Break the pipeline into segments for TypeScript inference
-  // (fp-ts pipe loses type accuracy after ~7 chained stages)
+  const pipeline = Effect.gen(function* () {
+    // Phase A: Validate and check availability
+    yield* validateWith(BookingRequestSchema, request);
+    const service = yield* scheduler.getService(request.serviceId);
+    const available = yield* scheduler.checkSlotAvailability({
+      serviceId: request.serviceId,
+      providerId: request.providerId,
+      datetime: request.datetime,
+    });
+    if (!available) {
+      return yield* Effect.fail(
+        Errors.reservation('SLOT_TAKEN', 'This time slot is no longer available', request.datetime)
+      );
+    }
 
-  // Phase A: Validate and get service
-  const validated: SchedulingResult<{ service: Service }> = pipe(
-    validateWith(BookingRequestSchema, request),
-    TE.chain(() => scheduler.getService(request.serviceId)),
-    TE.chain((service) =>
-      pipe(
-        scheduler.checkSlotAvailability({
-          serviceId: request.serviceId,
-          providerId: request.providerId,
-          datetime: request.datetime,
-        }),
-        TE.chain((available) =>
-          available
-            ? TE.right({ service })
-            : TE.left(Errors.reservation('SLOT_TAKEN', 'This time slot is no longer available', request.datetime))
-        ),
-      ),
-    ),
-  );
+    // Phase B: Reserve slot (optional — graceful fallback if adapter doesn't support)
+    const reservation = yield* pipe(
+      scheduler.createReservation({
+        serviceId: request.serviceId,
+        providerId: request.providerId,
+        datetime: request.datetime,
+        duration: service.duration,
+        notes: `Payment pending: ${request.idempotencyKey}`,
+      }),
+      Effect.map((r) => r as SlotReservation | undefined),
+      Effect.catchAll(() => Effect.succeed(undefined as SlotReservation | undefined)),
+    );
 
-  // Phase B: Reserve slot (each step is a separate variable for TS inference)
-  type WithService = { service: Service; reservation: SlotReservation | undefined };
-  const reserved: SchedulingResult<WithService> = pipe(
-    validated,
-    TE.chain(({ service }) =>
-      pipe(
-        scheduler.createReservation({
-          serviceId: request.serviceId,
-          providerId: request.providerId,
-          datetime: request.datetime,
-          duration: service.duration,
-          notes: `Payment pending: ${request.idempotencyKey}`,
-        }),
-        TE.map((reservation): WithService => ({ service, reservation })),
-        TE.orElse((): SchedulingResult<WithService> => TE.right({ service, reservation: undefined })),
-      ),
-    ),
-  );
-
-  // Phase C: Process payment
-  type WithPayment = WithService & { payment: PaymentResult };
-  const paid: SchedulingResult<WithPayment> = pipe(
-    reserved,
-    TE.chain(({ service, reservation }) =>
-      pipe(
+    // Phase C: Process payment (release reservation on failure)
+    const payment = yield* pipe(
+      Effect.flatMap(
         paymentAdapter.createIntent({
           amount: service.price,
           currency: service.currency,
@@ -151,51 +132,51 @@ export const completeBookingWithAltPayment = (
           metadata: { serviceId: request.serviceId, datetime: request.datetime, correlationId },
           idempotencyKey: `${request.idempotencyKey}_intent`,
         }),
-        TE.chain((intent) => paymentAdapter.capturePayment(intent.id)),
-        TE.map((payment): WithPayment => ({ service, reservation, payment })),
-        TE.orElse((error) =>
-          reservation
-            ? pipe(scheduler.releaseReservation(reservation.id), TE.chain(() => TE.left(error)))
-            : TE.left(error),
-        ),
+        (intent) => paymentAdapter.capturePayment(intent.id),
       ),
-    ),
-  );
+      Effect.catchAll((error) => {
+        if (reservation) {
+          return Effect.flatMap(
+            scheduler.releaseReservation(reservation.id),
+            () => Effect.fail(error),
+          );
+        }
+        return Effect.fail(error);
+      }),
+    );
 
-  // Phase D: Create booking with payment reference
-  const booked: SchedulingResult<BookingPipelineResult> = pipe(
-    paid,
-    TE.chain(({ reservation, payment }) => {
-      const bookingCreated: SchedulingResult<BookingPipelineResult> = pipe(
-        scheduler.createBookingWithPaymentRef(request, payment.transactionId, paymentAdapter.name),
-        TE.map((booking): BookingPipelineResult => ({ booking, payment, reservation })),
-      );
-
-      // On booking failure: refund + release reservation
-      return pipe(
-        bookingCreated,
-        TE.orElse((error): SchedulingResult<BookingPipelineResult> =>
-          pipe(
+    // Phase D: Create booking (refund + release on failure)
+    const booking = yield* pipe(
+      scheduler.createBookingWithPaymentRef(request, payment.transactionId, paymentAdapter.name),
+      Effect.catchAll((error) =>
+        Effect.gen(function* () {
+          yield* Effect.catchAll(
             paymentAdapter.refund({ transactionId: payment.transactionId, reason: 'Booking creation failed' }),
-            TE.chain(() => (reservation ? scheduler.releaseReservation(reservation.id) : TE.right(undefined))),
-            TE.chain(() => TE.left(error)),
-          ),
-        ),
+            () => Effect.succeed(undefined),
+          );
+          if (reservation) {
+            yield* Effect.catchAll(
+              scheduler.releaseReservation(reservation.id),
+              () => Effect.succeed(undefined),
+            );
+          }
+          return yield* Effect.fail(error);
+        }),
+      ),
+    );
+
+    // Phase E: Cleanup — release reservation
+    if (reservation) {
+      yield* Effect.catchAll(
+        scheduler.releaseReservation(reservation.id),
+        () => Effect.succeed(undefined),
       );
-    }),
-  );
+    }
 
-  // Phase E: Release reservation (cleanup) + logging
-  const cleaned: SchedulingResult<BookingPipelineResult> = pipe(
-    booked,
-    TE.chain((result) =>
-      result.reservation
-        ? pipe(scheduler.releaseReservation(result.reservation.id), TE.map(() => result))
-        : TE.right(result),
-    ),
-  );
+    return { booking, payment, reservation } satisfies BookingPipelineResult;
+  });
 
-  return pipe(cleaned, withCorrelationId('completeBookingWithAltPayment', correlationId));
+  return pipe(pipeline, withCorrelationId('completeBookingWithAltPayment', correlationId));
 };
 
 // =============================================================================
@@ -221,19 +202,16 @@ export const getAvailabilityWithService = (
   scheduler: SchedulingAdapter,
   input: AvailabilityInput
 ): SchedulingResult<AvailabilityResult> =>
-  pipe(
-    TE.Do,
-    TE.bind('service', () => scheduler.getService(input.serviceId)),
-    TE.bind('dates', () =>
-      scheduler.getAvailableDates({
-        serviceId: input.serviceId,
-        providerId: input.providerId,
-        startDate: input.startDate,
-        endDate: input.endDate,
-      })
-    ),
-    TE.map(({ service, dates }) => ({ service, dates }))
-  );
+  Effect.gen(function* () {
+    const service = yield* scheduler.getService(input.serviceId);
+    const dates = yield* scheduler.getAvailableDates({
+      serviceId: input.serviceId,
+      providerId: input.providerId,
+      startDate: input.startDate,
+      endDate: input.endDate,
+    });
+    return { service, dates };
+  });
 
 // =============================================================================
 // TIME SLOTS PIPELINE
@@ -258,18 +236,15 @@ export const getTimeSlotsWithService = (
   scheduler: SchedulingAdapter,
   input: TimeSlotsInput
 ): SchedulingResult<TimeSlotsResult> =>
-  pipe(
-    TE.Do,
-    TE.bind('service', () => scheduler.getService(input.serviceId)),
-    TE.bind('slots', () =>
-      scheduler.getAvailableSlots({
-        serviceId: input.serviceId,
-        providerId: input.providerId,
-        date: input.date,
-      })
-    ),
-    TE.map(({ service, slots }) => ({ service, date: input.date, slots }))
-  );
+  Effect.gen(function* () {
+    const service = yield* scheduler.getService(input.serviceId);
+    const slots = yield* scheduler.getAvailableSlots({
+      serviceId: input.serviceId,
+      providerId: input.providerId,
+      date: input.date,
+    });
+    return { service, date: input.date, slots };
+  });
 
 // =============================================================================
 // CANCELLATION PIPELINE
@@ -298,57 +273,43 @@ export const cancelBookingWithRefund = (
 ): SchedulingResult<CancellationResult> => {
   const { scheduler, payments } = ctx;
 
-  return pipe(
-    // Get booking to find payment info
-    scheduler.getBooking(input.bookingId),
+  return Effect.gen(function* () {
+    const booking = yield* scheduler.getBooking(input.bookingId);
+    yield* scheduler.cancelBooking(input.bookingId, input.reason);
 
-    // Cancel the booking
-    TE.chain((booking) =>
-      pipe(
-        scheduler.cancelBooking(input.bookingId, input.reason),
-        TE.map(() => booking)
-      )
-    ),
+    if (!input.refund || !booking.paymentRef) {
+      return { cancelled: true } satisfies CancellationResult;
+    }
 
-    // Process refund if requested and payment exists
-    TE.chain((booking) => {
-      if (!input.refund || !booking.paymentRef) {
-        return TE.right({ cancelled: true });
-      }
+    // Extract payment processor from notes
+    const processorMatch = booking.paymentRef?.match(/\[(\w+)\]/);
+    const processor = processorMatch?.[1]?.toLowerCase();
+    const paymentAdapter = processor ? payments.get(processor) : undefined;
 
-      // Extract payment processor from notes
-      const processorMatch = booking.paymentRef?.match(/\[(\w+)\]/);
-      const processor = processorMatch?.[1]?.toLowerCase();
-      const paymentAdapter = processor ? payments.get(processor) : undefined;
+    if (!paymentAdapter) {
+      return { cancelled: true, refund: { success: false } } satisfies CancellationResult;
+    }
 
-      if (!paymentAdapter) {
-        return TE.right({ cancelled: true, refund: { success: false } });
-      }
+    const txMatch = booking.paymentRef?.match(/Transaction:\s*(\S+)/);
+    const transactionId = txMatch?.[1];
 
-      // Extract transaction ID from notes
-      const txMatch = booking.paymentRef?.match(/Transaction:\s*(\S+)/);
-      const transactionId = txMatch?.[1];
+    if (!transactionId) {
+      return { cancelled: true, refund: { success: false } } satisfies CancellationResult;
+    }
 
-      if (!transactionId) {
-        return TE.right({ cancelled: true, refund: { success: false } });
-      }
+    const refundResult = yield* pipe(
+      paymentAdapter.refund({ transactionId, reason: input.reason ?? 'Booking cancelled' }),
+      Effect.catchAll(() => Effect.succeed({ success: false, refundId: '', originalTransactionId: transactionId, amount: 0, currency: 'USD', timestamp: new Date().toISOString() })),
+    );
 
-      return pipe(
-        paymentAdapter.refund({
-          transactionId,
-          reason: input.reason ?? 'Booking cancelled',
-        }),
-        TE.map((refundResult): CancellationResult => ({
-          cancelled: true,
-          refund: {
-            success: refundResult.success,
-            refundId: refundResult.refundId,
-          },
-        })),
-        TE.orElse((): SchedulingResult<CancellationResult> => TE.right({ cancelled: true, refund: { success: false } }))
-      );
-    })
-  );
+    return {
+      cancelled: true,
+      refund: {
+        success: refundResult.success,
+        refundId: refundResult.refundId,
+      },
+    } satisfies CancellationResult;
+  });
 };
 
 // =============================================================================
@@ -380,7 +341,6 @@ export const createSchedulingKit = (
     registry.register(adapter);
   }
 
-  // Internal Map for pipeline use (PipelineContext expects Map<string, PaymentAdapter>)
   const payments = new Map<string, PaymentAdapter>();
   for (const a of registry.getAll()) {
     payments.set(a.name, a);

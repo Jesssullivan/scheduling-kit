@@ -3,8 +3,7 @@
  * Implements SchedulingAdapter for Acuity's REST API
  */
 
-import * as TE from 'fp-ts/TaskEither';
-import { pipe } from 'fp-ts/function';
+import { Effect, pipe } from 'effect';
 import type {
   SchedulingResult,
   Service,
@@ -203,70 +202,65 @@ export const createAcuityAdapter = (config: AcuityAdapterConfig): SchedulingAdap
 
     // Services
     getServices: () =>
-      pipe(
+      Effect.map(
         get<AcuityAppointmentType[]>('/appointment-types'),
-        TE.map((types) => types.filter((t) => t.active).map(toService))
+        (types) => types.filter((t) => t.active).map(toService)
       ),
 
     getService: (serviceId) =>
-      pipe(
+      Effect.flatMap(
         get<AcuityAppointmentType[]>('/appointment-types'),
-        TE.chain((types) => {
+        (types) => {
           const found = types.find((t) => String(t.id) === serviceId);
           return found
-            ? TE.right(toService(found))
-            : TE.left(Errors.acuity('NOT_FOUND', `Service ${serviceId} not found`));
-        })
+            ? Effect.succeed(toService(found))
+            : Effect.fail(Errors.acuity('NOT_FOUND', `Service ${serviceId} not found`));
+        }
       ),
 
     // Providers
     getProviders: () =>
-      pipe(
+      Effect.map(
         get<AcuityCalendar[]>('/calendars'),
-        TE.map((cals) => cals.map(toProvider))
+        (cals) => cals.map(toProvider)
       ),
 
     getProvider: (providerId) =>
-      pipe(
+      Effect.flatMap(
         get<AcuityCalendar[]>('/calendars'),
-        TE.chain((cals) => {
+        (cals) => {
           const found = cals.find((c) => String(c.id) === providerId);
           return found
-            ? TE.right(toProvider(found))
-            : TE.left(Errors.acuity('NOT_FOUND', `Provider ${providerId} not found`));
-        })
+            ? Effect.succeed(toProvider(found))
+            : Effect.fail(Errors.acuity('NOT_FOUND', `Provider ${providerId} not found`));
+        }
       ),
 
     getProvidersForService: (serviceId) =>
-      pipe(
-        TE.Do,
-        TE.bind('types', () => get<AcuityAppointmentType[]>('/appointment-types')),
-        TE.bind('calendars', () => get<AcuityCalendar[]>('/calendars')),
-        TE.map(({ types, calendars }) => {
-          const serviceType = types.find((t) => String(t.id) === serviceId);
-          if (!serviceType) return [];
-
-          return calendars
-            .filter((c) => serviceType.calendarIDs.includes(c.id))
-            .map(toProvider);
-        })
-      ),
+      Effect.gen(function* () {
+        const types = yield* get<AcuityAppointmentType[]>('/appointment-types');
+        const calendars = yield* get<AcuityCalendar[]>('/calendars');
+        const serviceType = types.find((t) => String(t.id) === serviceId);
+        if (!serviceType) return [];
+        return calendars
+          .filter((c) => serviceType.calendarIDs.includes(c.id))
+          .map(toProvider);
+      }),
 
     // Availability
     getAvailableDates: ({ serviceId, providerId, startDate, endDate }) => {
       const params = new URLSearchParams({
         appointmentTypeID: serviceId,
-        month: startDate.slice(0, 7), // YYYY-MM
+        month: startDate.slice(0, 7),
       });
       if (providerId) params.set('calendarID', providerId);
 
-      return pipe(
+      return Effect.map(
         get<AcuityAvailableDate[]>(`/availability/dates?${params}`),
-        TE.map((dates) =>
+        (dates) =>
           dates
             .filter((d) => d.date >= startDate && d.date <= endDate)
             .map((d) => ({ date: d.date, slots: 1 }))
-        )
       );
     },
 
@@ -277,14 +271,13 @@ export const createAcuityAdapter = (config: AcuityAdapterConfig): SchedulingAdap
       });
       if (providerId) params.set('calendarID', providerId);
 
-      return pipe(
+      return Effect.map(
         get<AcuityAvailableTime[]>(`/availability/times?${params}`),
-        TE.map((times) =>
+        (times) =>
           times.map((t) => ({
             datetime: t.time,
             available: t.slotsAvailable > 0,
           }))
-        )
       );
     },
 
@@ -296,36 +289,40 @@ export const createAcuityAdapter = (config: AcuityAdapterConfig): SchedulingAdap
       if (providerId) params.set('calendarID', providerId);
 
       return pipe(
-        get<{ valid: boolean }>(`/availability/check-times?${params}`),
-        TE.map((result) => result.valid),
-        TE.orElse(() => TE.right(false)) // Treat errors as unavailable
+        Effect.map(
+          get<{ valid: boolean }>(`/availability/check-times?${params}`),
+          (result) => result.valid
+        ),
+        Effect.catchAll(() => Effect.succeed(false)) // Treat errors as unavailable
       );
     },
 
     // Reservations (via Acuity blocks)
     createReservation: ({ providerId, datetime, duration, notes }) => {
       if (!providerId) {
-        return TE.left(Errors.reservation('BLOCK_FAILED', 'Provider ID required for reservation'));
+        return Effect.fail(Errors.reservation('BLOCK_FAILED', 'Provider ID required for reservation'));
       }
 
       const startTime = new Date(datetime);
       const endTime = new Date(startTime.getTime() + duration * 60 * 1000);
 
       return pipe(
-        post<AcuityBlock>('/blocks', {
-          calendarID: parseInt(providerId, 10),
-          start: startTime.toISOString(),
-          end: endTime.toISOString(),
-          notes: notes ?? 'Payment pending - slot reserved',
-        }),
-        TE.map((block) => ({
-          id: String(block.id),
-          datetime,
-          duration,
-          expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-          providerId,
-        })),
-        TE.mapLeft((e) =>
+        Effect.map(
+          post<AcuityBlock>('/blocks', {
+            calendarID: parseInt(providerId, 10),
+            start: startTime.toISOString(),
+            end: endTime.toISOString(),
+            notes: notes ?? 'Payment pending - slot reserved',
+          }),
+          (block) => ({
+            id: String(block.id),
+            datetime,
+            duration,
+            expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+            providerId,
+          } satisfies SlotReservation)
+        ),
+        Effect.mapError((e) =>
           Errors.reservation('BLOCK_FAILED', e._tag === 'AcuityError' ? e.message : 'Failed to create reservation')
         )
       );
@@ -333,14 +330,13 @@ export const createAcuityAdapter = (config: AcuityAdapterConfig): SchedulingAdap
 
     releaseReservation: (reservationId) =>
       pipe(
-        del<void>(`/blocks/${reservationId}`),
-        TE.map(() => undefined),
-        TE.orElse(() => TE.right(undefined)) // Ignore errors when releasing
+        Effect.map(del<void>(`/blocks/${reservationId}`), () => undefined),
+        Effect.catchAll(() => Effect.succeed(undefined)) // Ignore errors when releasing
       ),
 
     // Bookings
     createBooking: (request) =>
-      pipe(
+      Effect.map(
         post<AcuityAppointment>('/appointments?admin=true', {
           appointmentTypeID: parseInt(request.serviceId, 10),
           calendarID: request.providerId ? parseInt(request.providerId, 10) : undefined,
@@ -351,7 +347,7 @@ export const createAcuityAdapter = (config: AcuityAdapterConfig): SchedulingAdap
           phone: request.client.phone,
           notes: request.client.notes,
         }),
-        TE.map(toBooking)
+        toBooking
       ),
 
     createBookingWithPaymentRef: (request, paymentRef, paymentProcessor) => {
@@ -360,7 +356,7 @@ export const createAcuityAdapter = (config: AcuityAdapterConfig): SchedulingAdap
         ? `${request.client.notes}\n\n${paymentNote}`
         : paymentNote;
 
-      return pipe(
+      return Effect.map(
         post<AcuityAppointment>('/appointments?admin=true', {
           appointmentTypeID: parseInt(request.serviceId, 10),
           calendarID: request.providerId ? parseInt(request.providerId, 10) : undefined,
@@ -371,50 +367,41 @@ export const createAcuityAdapter = (config: AcuityAdapterConfig): SchedulingAdap
           phone: request.client.phone,
           notes: combinedNotes,
         }),
-        TE.map(toBooking)
+        toBooking
       );
     },
 
     getBooking: (bookingId) =>
-      pipe(
-        get<AcuityAppointment>(`/appointments/${bookingId}`),
-        TE.map(toBooking)
-      ),
+      Effect.map(get<AcuityAppointment>(`/appointments/${bookingId}`), toBooking),
 
     cancelBooking: (bookingId, reason) =>
-      pipe(
-        request<void>('PUT', `/appointments/${bookingId}/cancel`, {
-          cancelNote: reason,
-        }),
-        TE.map(() => undefined)
+      Effect.map(
+        request<void>('PUT', `/appointments/${bookingId}/cancel`, { cancelNote: reason }),
+        () => undefined
       ),
 
     rescheduleBooking: (bookingId, newDatetime) =>
-      pipe(
-        request<AcuityAppointment>('PUT', `/appointments/${bookingId}/reschedule`, {
-          datetime: newDatetime,
-        }),
-        TE.map(toBooking)
+      Effect.map(
+        request<AcuityAppointment>('PUT', `/appointments/${bookingId}/reschedule`, { datetime: newDatetime }),
+        toBooking
       ),
 
     // Clients
     findOrCreateClient: (client) =>
-      pipe(
+      Effect.map(
         get<{ id: number }[]>(`/clients?email=${encodeURIComponent(client.email)}`),
-        TE.map((clients) => {
+        (clients) => {
           if (clients.length > 0) {
             return { id: String(clients[0].id), isNew: false };
           }
-          // Acuity creates clients automatically with appointments
-          // Return a placeholder - real ID comes from appointment creation
           return { id: 'pending', isNew: true };
-        })
+        }
       ),
 
     getClientByEmail: (email) =>
-      pipe(
+      Effect.map(
         get<AcuityAppointment[]>(`/clients?email=${encodeURIComponent(email)}`),
-        TE.map((clients) => {
+        (clients) => {
           if (clients.length === 0) return null;
           const c = clients[0];
           return {
@@ -423,7 +410,7 @@ export const createAcuityAdapter = (config: AcuityAdapterConfig): SchedulingAdap
             email: c.email,
             phone: c.phone,
           };
-        })
+        }
       ),
   };
 };

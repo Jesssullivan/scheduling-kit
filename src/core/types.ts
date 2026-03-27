@@ -1,10 +1,9 @@
 /**
  * Core types for scheduling-kit
- * Backend-agnostic scheduling with fp-ts monadic composition
+ * Backend-agnostic scheduling with Effect TS
  */
 
-import type { TaskEither } from 'fp-ts/TaskEither';
-import type { ReaderTaskEither } from 'fp-ts/ReaderTaskEither';
+import type { Effect } from 'effect';
 
 // =============================================================================
 // ERROR TYPES (Discriminated Union)
@@ -146,14 +145,22 @@ export const Errors = {
 // =============================================================================
 
 /**
- * The core result type - TaskEither for async operations with typed errors
+ * The core result type - Effect for async operations with typed errors.
+ *
+ * Previously: `TaskEither<SchedulingError, A>` (fp-ts)
+ * Now: `Effect<A, SchedulingError>` (Effect TS)
+ *
+ * Callers migrate from `result()` (thunk) to `Effect.runPromise(result)`.
  */
-export type SchedulingResult<A> = TaskEither<SchedulingError, A>;
+export type SchedulingResult<A> = Effect.Effect<A, SchedulingError>;
 
 /**
- * Reader variant for dependency injection
+ * Reader variant for dependency injection.
+ *
+ * Previously: `ReaderTaskEither<Env, SchedulingError, A>` (fp-ts)
+ * Now: `Effect<A, SchedulingError, Env>` (Effect TS — Env is the third type param)
  */
-export type SchedulingReader<Env, A> = ReaderTaskEither<Env, SchedulingError, A>;
+export type SchedulingReader<Env, A> = Effect.Effect<A, SchedulingError, Env>;
 
 // =============================================================================
 // DOMAIN TYPES

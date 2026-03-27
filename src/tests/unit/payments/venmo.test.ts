@@ -4,12 +4,12 @@
  */
 
 import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest';
-import * as E from 'fp-ts/Either';
+
 import { createVenmoAdapter } from '../../../payments/venmo.js';
 import type { PaymentAdapter } from '../../../payments/types.js';
 import { server } from '../../mocks/server.js';
 import { resetPayPalMockState, configurePayPalMock } from '../../mocks/handlers/index.js';
-import { expectRightAsync, expectLeftTagAsync } from '../../helpers/fp-ts.js';
+import { expectRightAsync, expectLeftTagAsync } from '../../helpers/effect.js';
 
 // MSW server lifecycle
 beforeAll(() => {
@@ -142,9 +142,7 @@ describe('Venmo Adapter', () => {
   describe('cancelIntent', () => {
     it('cancels an intent (no-op for PayPal)', async () => {
       // PayPal orders can't be explicitly cancelled, they expire
-      const result = await adapter.cancelIntent('order_to_cancel')();
-
-      expect(E.isRight(result)).toBe(true);
+      await expectRightAsync(adapter.cancelIntent('order_to_cancel'));
     });
   });
 
