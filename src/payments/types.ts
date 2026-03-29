@@ -3,6 +3,7 @@
  * Backend-agnostic contract for payment processors (Venmo, Stripe, etc.)
  */
 
+import { Effect } from 'effect';
 import type {
   SchedulingResult,
   PaymentIntent,
@@ -209,16 +210,20 @@ export const createPaymentRegistry = (): PaymentRegistry => {
       const methods: PaymentMethodOption[] = [];
 
       for (const adapter of adapters.values()) {
-        const result = await adapter.isAvailable()();
-        if (result._tag === 'Right' && result.right) {
-          const config = adapter.getClientConfig();
-          methods.push({
-            id: adapter.name,
-            name: adapter.name,
-            displayName: config.displayName,
-            icon: config.icon,
-            available: true,
-          });
+        try {
+          const available = await Effect.runPromise(adapter.isAvailable());
+          if (available) {
+            const config = adapter.getClientConfig();
+            methods.push({
+              id: adapter.name,
+              name: adapter.name,
+              displayName: config.displayName,
+              icon: config.icon,
+              available: true,
+            });
+          }
+        } catch {
+          // Adapter unavailable — skip
         }
       }
 

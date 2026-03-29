@@ -3,6 +3,7 @@
    * CheckoutDrawer Component
    * Main orchestrating component for the entire checkout flow
    */
+  import { Effect } from 'effect';
   import type { SchedulingKit } from '../core/pipelines.js';
   import type { Service, Provider, ClientInfo, AvailableDate, TimeSlot } from '../core/types.js';
   import type { PaymentMethodOption } from '../payments/types.js';
@@ -89,11 +90,9 @@
     loadingServices = true;
     errorMessage = undefined;
 
-    const result = await kit.scheduler.getServices()();
-
-    if (result._tag === 'Right') {
-      services = result.right;
-    } else {
+    try {
+      services = await Effect.runPromise(kit.scheduler.getServices());
+    } catch {
       errorMessage = 'Failed to load services. Please try again.';
     }
 
@@ -104,11 +103,9 @@
   const loadProviders = async (serviceId: string) => {
     loadingProviders = true;
 
-    const result = await kit.scheduler.getProvidersForService(serviceId)();
-
-    if (result._tag === 'Right') {
-      providers = result.right;
-    } else {
+    try {
+      providers = await Effect.runPromise(kit.scheduler.getProvidersForService(serviceId));
+    } catch {
       providers = [];
     }
 
@@ -123,16 +120,14 @@
     const startDate = new Date().toISOString().split('T')[0];
     const endDate = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-    const result = await kit.scheduler.getAvailableDates({
-      serviceId: store.service.id,
-      providerId: store.provider?.id,
-      startDate,
-      endDate,
-    })();
-
-    if (result._tag === 'Right') {
-      availableDates = result.right;
-    } else {
+    try {
+      availableDates = await Effect.runPromise(kit.scheduler.getAvailableDates({
+        serviceId: store.service.id,
+        providerId: store.provider?.id,
+        startDate,
+        endDate,
+      }));
+    } catch {
       availableDates = [];
     }
 
@@ -145,15 +140,13 @@
 
     loadingSlots = true;
 
-    const result = await kit.scheduler.getAvailableSlots({
-      serviceId: store.service.id,
-      providerId: store.provider?.id,
-      date,
-    })();
-
-    if (result._tag === 'Right') {
-      availableSlots = result.right;
-    } else {
+    try {
+      availableSlots = await Effect.runPromise(kit.scheduler.getAvailableSlots({
+        serviceId: store.service.id,
+        providerId: store.provider?.id,
+        date,
+      }));
+    } catch {
       availableSlots = [];
     }
 
@@ -219,25 +212,24 @@
     processingBooking = true;
     errorMessage = undefined;
 
-    const result = await kit.completeBooking(
-      {
-        serviceId: store.service.id,
-        providerId: store.provider?.id,
-        datetime: store.datetime,
-        client: store.client,
-        paymentMethod: store.paymentMethod,
-        idempotencyKey: generateIdempotencyKey('booking'),
-      },
-      store.paymentMethod
-    )();
-
-    if (result._tag === 'Right') {
-      store.setPaymentResult(result.right.payment);
-      store.setBooking(result.right.booking);
-      onBookingComplete?.(result.right.booking.id);
-    } else {
-      errorMessage = getErrorMessage(result.left);
-      store.setError(result.left);
+    try {
+      const result = await Effect.runPromise(kit.completeBooking(
+        {
+          serviceId: store.service.id,
+          providerId: store.provider?.id,
+          datetime: store.datetime,
+          client: store.client,
+          paymentMethod: store.paymentMethod,
+          idempotencyKey: generateIdempotencyKey('booking'),
+        },
+        store.paymentMethod
+      ));
+      store.setPaymentResult(result.payment);
+      store.setBooking(result.booking);
+      onBookingComplete?.(result.booking.id);
+    } catch (e) {
+      errorMessage = getErrorMessage(e);
+      store.setError(e);
     }
 
     processingBooking = false;

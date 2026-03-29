@@ -75,15 +75,17 @@ export const verifyAcuityWebhook = async (
 
 /**
  * Parse Acuity webhook payload
+ *
+ * Returns { ok: true, payload } on success, { ok: false, error } on failure.
  */
 export const parseAcuityWebhook = (
   body: string | Record<string, unknown>
-): E.Either<Error, AcuityWebhookPayload> => {
+): { ok: true; payload: AcuityWebhookPayload } | { ok: false; error: Error } => {
   try {
     const data = typeof body === 'string' ? JSON.parse(body) : body;
 
     if (!data.action || !data.id || !data.calendarID || !data.appointmentTypeID) {
-      return E.left(new Error('Invalid webhook payload: missing required fields'));
+      return { ok: false, error: new Error('Invalid webhook payload: missing required fields') };
     }
 
     const validActions: AcuityWebhookEventType[] = [
@@ -95,17 +97,20 @@ export const parseAcuityWebhook = (
     ];
 
     if (!validActions.includes(data.action)) {
-      return E.left(new Error(`Invalid webhook action: ${data.action}`));
+      return { ok: false, error: new Error(`Invalid webhook action: ${data.action}`) };
     }
 
-    return E.right({
-      action: data.action,
-      id: Number(data.id),
-      calendarID: Number(data.calendarID),
-      appointmentTypeID: Number(data.appointmentTypeID),
-    });
+    return {
+      ok: true,
+      payload: {
+        action: data.action,
+        id: Number(data.id),
+        calendarID: Number(data.calendarID),
+        appointmentTypeID: Number(data.appointmentTypeID),
+      },
+    };
   } catch (e) {
-    return E.left(e instanceof Error ? e : new Error(String(e)));
+    return { ok: false, error: e instanceof Error ? e : new Error(String(e)) };
   }
 };
 
@@ -211,12 +216,12 @@ export const createWebhookHandler = (options: WebhookHandlerOptions) => {
 
     // Parse payload
     const parseResult = parseAcuityWebhook(body);
-    if (E.isLeft(parseResult)) {
-      log('Failed to parse webhook:', parseResult.left.message);
-      return { valid: false, error: parseResult.left.message };
+    if (!parseResult.ok) {
+      log('Failed to parse webhook:', parseResult.error.message);
+      return { valid: false, error: parseResult.error.message };
     }
 
-    const payload = parseResult.right;
+    const payload = parseResult.payload;
     log('Received webhook:', payload.action, 'for appointment', payload.id);
 
     // Handle cancellation (no need to fetch full appointment)
@@ -226,14 +231,14 @@ export const createWebhookHandler = (options: WebhookHandlerOptions) => {
     }
 
     // Fetch full appointment details for other events
-    const fetchResult = await fetchAcuityAppointment(config, payload.id)();
-    if (E.isLeft(fetchResult)) {
-      const errorMsg = 'message' in fetchResult.left ? fetchResult.left.message : fetchResult.left._tag;
+    let appointment: AcuityAppointment;
+    try {
+      appointment = await Effect.runPromise(fetchAcuityAppointment(config, payload.id));
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : String(e);
       log('Failed to fetch appointment:', errorMsg);
       return { valid: true, payload, error: 'Failed to fetch appointment details' };
     }
-
-    const appointment = fetchResult.right;
 
     // Dispatch to appropriate handler
     switch (payload.action) {

@@ -139,7 +139,7 @@ export class AcuityScraper {
   /**
    * Extract all services (appointment types) from the scheduling page
    */
-  async scrapeServices(): Promise<E.Either<AcuityError | InfrastructureError, ScrapedService[]>> {
+  async scrapeServices(): Promise<Either<AcuityError | InfrastructureError, ScrapedService[]>> {
     let page: Page | null = null;
 
     try {
@@ -266,7 +266,7 @@ export class AcuityScraper {
   async scrapeAvailableDates(
     serviceId: string,
     month?: string
-  ): Promise<E.Either<AcuityError | InfrastructureError, string[]>> {
+  ): Promise<Either<AcuityError | InfrastructureError, string[]>> {
     let page: Page | null = null;
 
     try {
@@ -336,7 +336,7 @@ export class AcuityScraper {
   async scrapeTimeSlots(
     serviceId: string,
     date: string
-  ): Promise<E.Either<AcuityError | InfrastructureError, ScrapedTimeSlot[]>> {
+  ): Promise<Either<AcuityError | InfrastructureError, ScrapedTimeSlot[]>> {
     let page: Page | null = null;
 
     try {
