@@ -10,9 +10,10 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import * as E from 'fp-ts/Either';
+import { Effect, Exit, Cause, Option } from 'effect';
 import { createAcuityAdapter } from '../../src/adapters/acuity.js';
 import type { SchedulingAdapter } from '../../src/adapters/types.js';
+import type { SchedulingError } from '../../src/core/types.js';
 
 // Skip all tests if RUN_LIVE_TESTS is not set
 const RUN_LIVE_TESTS = process.env.RUN_LIVE_TESTS === 'true';
@@ -20,6 +21,17 @@ const RUN_LIVE_TESTS = process.env.RUN_LIVE_TESTS === 'true';
 // Get credentials from environment
 const ACUITY_USER_ID = process.env.ACUITY_USER_ID;
 const ACUITY_API_KEY = process.env.ACUITY_API_KEY;
+
+/** Run an Effect and return { ok, value, error } for flexible assertions */
+const run = async <A>(effect: Effect.Effect<A, SchedulingError>): Promise<
+  { ok: true; value: A } | { ok: false; error: SchedulingError }
+> => {
+  const exit = await Effect.runPromiseExit(effect);
+  if (Exit.isSuccess(exit)) return { ok: true, value: exit.value };
+  const failure = Cause.failureOption(exit.cause);
+  if (Option.isSome(failure)) return { ok: false, error: failure.value };
+  throw new Error(`Unexpected defect: ${Cause.pretty(exit.cause)}`);
+};
 
 describe.skipIf(!RUN_LIVE_TESTS)('Acuity Live API Tests', () => {
   let adapter: SchedulingAdapter;
@@ -40,10 +52,10 @@ describe.skipIf(!RUN_LIVE_TESTS)('Acuity Live API Tests', () => {
 
   describe('Connection & Error Handling', () => {
     it('validates credentials and reports API access level', async () => {
-      const result = await adapter.getServices()();
+      const result = await run(adapter.getServices());
 
-      if (E.isLeft(result)) {
-        const error = result.left;
+      if (!result.ok) {
+        const error = result.error;
         if (error._tag === 'AcuityError' && error.statusCode === 403) {
           console.log('\n========================================');
           console.log('ACUITY API ACCESS: POWERHOUSE REQUIRED');
@@ -66,10 +78,10 @@ describe.skipIf(!RUN_LIVE_TESTS)('Acuity Live API Tests', () => {
         console.log('\n========================================');
         console.log('ACUITY API ACCESS: FULL ACCESS');
         console.log('========================================');
-        console.log(`Found ${result.right.length} services`);
+        console.log(`Found ${result.value.length} services`);
         console.log('========================================\n');
 
-        expect(result.right.length).toBeGreaterThan(0);
+        expect(result.value.length).toBeGreaterThan(0);
       }
     });
 
@@ -80,28 +92,28 @@ describe.skipIf(!RUN_LIVE_TESTS)('Acuity Live API Tests', () => {
         apiKey: 'invalid',
       });
 
-      const result = await badAdapter.getServices()();
+      const result = await run(badAdapter.getServices());
 
-      expect(E.isLeft(result)).toBe(true);
-      if (E.isLeft(result)) {
-        expect(result.left._tag).toBe('AcuityError');
-        expect(result.left.statusCode).toBe(401);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error._tag).toBe('AcuityError');
+        expect(result.error.statusCode).toBe(401);
         console.log(`✓ Auth error correctly handled (401)`);
       }
     });
 
     it('handles 403 Forbidden gracefully (Powerhouse required)', async () => {
       // This test verifies the adapter correctly handles API access restrictions
-      const result = await adapter.getServices()();
+      const result = await run(adapter.getServices());
 
       // Either succeeds (has Powerhouse) or fails with 403 (no Powerhouse)
       // Both outcomes are valid - we're testing error handling
-      if (E.isLeft(result)) {
-        expect(result.left._tag).toBe('AcuityError');
+      if (!result.ok) {
+        expect(result.error._tag).toBe('AcuityError');
         // Could be 403 (no Powerhouse) or another error
-        console.log(`✓ API restriction handled: ${result.left.statusCode}`);
+        console.log(`✓ API restriction handled: ${result.error.statusCode}`);
       } else {
-        console.log(`✓ API access available: ${result.right.length} services`);
+        console.log(`✓ API access available: ${result.value.length} services`);
       }
 
       // This test always passes - it's verifying error handling works
@@ -113,42 +125,42 @@ describe.skipIf(!RUN_LIVE_TESTS)('Acuity Live API Tests', () => {
   // They are kept here for reference and future use
   describe('Read Operations (requires Powerhouse plan)', () => {
     it('lists services (skipped without Powerhouse)', async () => {
-      const result = await adapter.getServices()();
+      const result = await run(adapter.getServices());
 
-      if (E.isLeft(result) && result.left.statusCode === 403) {
+      if (!result.ok && result.error.statusCode === 403) {
         console.log('⏭️  Skipped: Requires Powerhouse plan');
         return; // Skip gracefully
       }
 
-      expect(E.isRight(result)).toBe(true);
-      if (E.isRight(result)) {
-        console.log(`Services: ${result.right.map((s) => s.name).join(', ')}`);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        console.log(`Services: ${result.value.map((s) => s.name).join(', ')}`);
       }
     });
 
     it('lists providers (skipped without Powerhouse)', async () => {
-      const result = await adapter.getProviders()();
+      const result = await run(adapter.getProviders());
 
-      if (E.isLeft(result) && result.left.statusCode === 403) {
+      if (!result.ok && result.error.statusCode === 403) {
         console.log('⏭️  Skipped: Requires Powerhouse plan');
         return;
       }
 
-      expect(E.isRight(result)).toBe(true);
-      if (E.isRight(result)) {
-        console.log(`Providers: ${result.right.map((p) => p.name).join(', ')}`);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        console.log(`Providers: ${result.value.map((p) => p.name).join(', ')}`);
       }
     });
 
     it('checks availability (skipped without Powerhouse)', async () => {
-      const services = await adapter.getServices()();
+      const servicesResult = await run(adapter.getServices());
 
-      if (E.isLeft(services) && services.left.statusCode === 403) {
+      if (!servicesResult.ok && servicesResult.error.statusCode === 403) {
         console.log('⏭️  Skipped: Requires Powerhouse plan');
         return;
       }
 
-      if (E.isLeft(services)) return;
+      if (!servicesResult.ok) return;
 
       const startDate = new Date();
       const endDate = new Date();
@@ -156,14 +168,14 @@ describe.skipIf(!RUN_LIVE_TESTS)('Acuity Live API Tests', () => {
 
       const formatDate = (d: Date) => d.toISOString().split('T')[0];
 
-      const result = await adapter.getAvailableDates({
-        serviceId: services.right[0].id,
+      const result = await run(adapter.getAvailableDates({
+        serviceId: servicesResult.value[0].id,
         startDate: formatDate(startDate),
         endDate: formatDate(endDate),
-      })();
+      }));
 
-      if (E.isRight(result)) {
-        console.log(`Found ${result.right.length} available dates`);
+      if (result.ok) {
+        console.log(`Found ${result.value.length} available dates`);
       }
     });
   });
