@@ -475,9 +475,8 @@ export const createHomegrownAdapter = (config: HomegrownAdapterConfig): Scheduli
         if (!svc) throw new Error(`Service ${request.serviceId} not found`);
 
         // Find or create client
-        const clientResult = await adapter.findOrCreateClient(request.client)();
-        if (clientResult._tag === 'Left') throw new Error('Failed to create client');
-        const clientId = clientResult.right.id;
+        const clientResult = await Effect.runPromise(adapter.findOrCreateClient(request.client));
+        const clientId = clientResult.id;
 
         // Get practitioner
         const prac = await getDefaultPractitioner();
@@ -554,7 +553,6 @@ export const createHomegrownAdapter = (config: HomegrownAdapterConfig): Scheduli
               paymentStatus: 'paid' as const,
             };
           }),
-        ),
       ),
 
     getBooking: (bookingId: string) =>
@@ -672,7 +670,7 @@ export const createHomegrownAdapter = (config: HomegrownAdapterConfig): Scheduli
           .where(eq(bookingsTable.id, bookingId));
 
         // Return updated booking
-        return (await adapter.getBooking(bookingId)()) as any;
+        return await Effect.runPromise(adapter.getBooking(bookingId));
       }),
 
     // --- Clients ---
