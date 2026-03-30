@@ -1,6 +1,6 @@
 {
   "name": "@tummycrypt/scheduling-kit",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Backend-agnostic scheduling components with alternative payment support",
   "type": "module",
   "exports": {
@@ -42,6 +42,10 @@
     "./testing": {
       "types": "./dist/testing/index.d.ts",
       "default": "./dist/testing/index.js"
+    },
+    "./middleware": {
+      "types": "./dist/middleware/index.d.ts",
+      "default": "./dist/middleware/index.js"
     }
   },
   "svelte": "./dist/index.js",
