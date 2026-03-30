@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
-
+import { Effect, Exit, Cause } from 'effect';
 import { createAcuityAdapter } from '../../../adapters/acuity.js';
 import type { SchedulingAdapter } from '../../../adapters/types.js';
 import { server } from '../../mocks/server.js';
@@ -13,9 +13,9 @@ import {
   configureAcuityMock,
 } from '../../mocks/handlers/index.js';
 import {
-  expectRightAsync,
-  expectLeftAsync,
-  expectLeftTagAsync,
+  expectSuccess,
+  expectFailure,
+  expectFailureTag,
 } from '../../helpers/effect.js';
 
 // MSW server lifecycle
@@ -45,7 +45,7 @@ describe('Acuity Adapter Transformers', () => {
 
   describe('toService (appointment type transformer)', () => {
     it('transforms appointment type to Service', async () => {
-      const services = await expectRightAsync(adapter.getServices());
+      const services = await expectSuccess(adapter.getServices());
 
       expect(services.length).toBeGreaterThan(0);
 
@@ -61,7 +61,7 @@ describe('Acuity Adapter Transformers', () => {
     });
 
     it('filters inactive services', async () => {
-      const services = await expectRightAsync(adapter.getServices());
+      const services = await expectSuccess(adapter.getServices());
 
       // All returned services should be active
       services.forEach((service) => {
@@ -70,7 +70,7 @@ describe('Acuity Adapter Transformers', () => {
     });
 
     it('converts price from dollars string to cents', async () => {
-      const services = await expectRightAsync(adapter.getServices());
+      const services = await expectSuccess(adapter.getServices());
 
       // TMD 60min should be $200.00 = 20000 cents
       const tmd60 = services.find((s) => s.name.includes('TMD 60'));
@@ -80,7 +80,7 @@ describe('Acuity Adapter Transformers', () => {
     });
 
     it('handles missing optional fields', async () => {
-      const services = await expectRightAsync(adapter.getServices());
+      const services = await expectSuccess(adapter.getServices());
 
       services.forEach((service) => {
         // Required fields always present
@@ -96,7 +96,7 @@ describe('Acuity Adapter Transformers', () => {
 
   describe('toProvider (calendar transformer)', () => {
     it('transforms calendar to Provider', async () => {
-      const providers = await expectRightAsync(adapter.getProviders());
+      const providers = await expectSuccess(adapter.getProviders());
 
       expect(providers.length).toBeGreaterThan(0);
 
@@ -108,7 +108,7 @@ describe('Acuity Adapter Transformers', () => {
     });
 
     it('includes optional email and description', async () => {
-      const providers = await expectRightAsync(adapter.getProviders());
+      const providers = await expectSuccess(adapter.getProviders());
 
       const provider = providers[0];
       // Email is optional but fixture has it
@@ -116,7 +116,7 @@ describe('Acuity Adapter Transformers', () => {
     });
 
     it('preserves timezone information', async () => {
-      const providers = await expectRightAsync(adapter.getProviders());
+      const providers = await expectSuccess(adapter.getProviders());
 
       providers.forEach((provider) => {
         // Valid IANA timezone
@@ -127,45 +127,43 @@ describe('Acuity Adapter Transformers', () => {
 
   describe('toBooking (appointment transformer)', () => {
     it('transforms appointment to Booking', async () => {
-      // Create an appointment first
-      const booking = await expectRightAsync(adapter.createBooking({
-        serviceId: '12345',
-        providerId: '67890',
-        datetime: '2026-02-15T14:00:00-05:00',
-        client: {
-          firstName: 'John',
-          lastName: 'Doe',
-          email: 'john@example.com',
-        },
-        idempotencyKey: 'test-key-123',
-      }));
+      const booking = await expectSuccess(
+        adapter.createBooking({
+          serviceId: '12345',
+          providerId: '67890',
+          datetime: '2026-02-15T14:00:00-05:00',
+          client: {
+            firstName: 'John',
+            lastName: 'Doe',
+            email: 'john@example.com',
+          },
+          idempotencyKey: 'test-key-123',
+        })
+      );
 
-      {
-
-        expect(booking.id).toBeDefined();
-        expect(typeof booking.id).toBe('string');
-        expect(booking.serviceId).toBe('12345');
-        expect(booking.serviceName).toBeDefined();
-        expect(booking.datetime).toBeDefined();
-        expect(booking.endTime).toBeDefined();
-        expect(booking.duration).toBeGreaterThan(0);
-        expect(typeof booking.price).toBe('number');
-        expect(booking.currency).toBe('USD');
-        expect(booking.client).toBeDefined();
-        expect(booking.client.firstName).toBe('John');
-        expect(booking.status).toBe('confirmed');
-      }
+      expect(booking.id).toBeDefined();
+      expect(typeof booking.id).toBe('string');
+      expect(booking.serviceId).toBe('12345');
+      expect(booking.serviceName).toBeDefined();
+      expect(booking.datetime).toBeDefined();
+      expect(booking.endTime).toBeDefined();
+      expect(booking.duration).toBeGreaterThan(0);
+      expect(typeof booking.price).toBe('number');
+      expect(booking.currency).toBe('USD');
+      expect(booking.client).toBeDefined();
+      expect(booking.client.firstName).toBe('John');
+      expect(booking.status).toBe('confirmed');
     });
 
     it('sets payment status from paid field', async () => {
-      const booking = await expectRightAsync(adapter.getBooking('100001'));
+      const booking = await expectSuccess(adapter.getBooking('100001'));
 
       // Mock fixture has paid: 'no'
       expect(booking.paymentStatus).toBe('pending');
     });
 
     it('includes payment ref from notes', async () => {
-      const booking = await expectRightAsync(
+      const booking = await expectSuccess(
         adapter.createBookingWithPaymentRef(
           {
             serviceId: '12345',
@@ -190,7 +188,7 @@ describe('Acuity Adapter Transformers', () => {
 
   describe('availability transformers', () => {
     it('transforms availability dates', async () => {
-      const dates = await expectRightAsync(
+      const dates = await expectSuccess(
         adapter.getAvailableDates({
           serviceId: '12345',
           startDate: '2026-02-01',
@@ -206,7 +204,7 @@ describe('Acuity Adapter Transformers', () => {
     });
 
     it('transforms availability times to TimeSlot', async () => {
-      const slots = await expectRightAsync(
+      const slots = await expectSuccess(
         adapter.getAvailableSlots({
           serviceId: '12345',
           date: '2026-02-15',
@@ -221,7 +219,7 @@ describe('Acuity Adapter Transformers', () => {
     });
 
     it('checkSlotAvailability returns boolean', async () => {
-      const available = await expectRightAsync(
+      const available = await expectSuccess(
         adapter.checkSlotAvailability({
           serviceId: '12345',
           datetime: '2026-02-15T14:00:00-05:00',
@@ -234,7 +232,7 @@ describe('Acuity Adapter Transformers', () => {
 
   describe('reservation transformer (blocks)', () => {
     it('transforms block to SlotReservation', async () => {
-      const reservation = await expectRightAsync(
+      const reservation = await expectSuccess(
         adapter.createReservation({
           serviceId: '12345',
           providerId: '67890',
@@ -253,7 +251,7 @@ describe('Acuity Adapter Transformers', () => {
     });
 
     it('requires provider ID for reservation', async () => {
-      const error = await expectLeftTagAsync(
+      const error = await expectFailureTag(
         adapter.createReservation({
           serviceId: '12345',
           datetime: '2026-02-15T19:00:00.000Z',
@@ -286,7 +284,7 @@ describe('Acuity Adapter Error Handling', () => {
     configureAcuityMock({ simulateRateLimit: true });
 
     // Should retry and eventually succeed (rate limit is one-shot in mock)
-    const services = await expectRightAsync(adapter.getServices());
+    const services = await expectSuccess(adapter.getServices());
     expect(services.length).toBeGreaterThan(0);
   });
 
@@ -295,15 +293,15 @@ describe('Acuity Adapter Error Handling', () => {
 
     // After server error, it should return error
     // Note: with retry logic it may succeed on retry
+    const exit = await Effect.runPromiseExit(adapter.getServices());
+
     // Result could be success (retry) or failure
     // Just verify it completes without hanging
-    const { Effect, Exit } = await import('effect');
-    const exit = await Effect.runPromiseExit(adapter.getServices());
     expect(exit).toBeDefined();
   });
 
   it('returns NOT_FOUND for unknown service', async () => {
-    const error = await expectLeftTagAsync(
+    const error = await expectFailureTag(
       adapter.getService('nonexistent'),
       'AcuityError'
     );
@@ -315,7 +313,7 @@ describe('Acuity Adapter Error Handling', () => {
   });
 
   it('returns NOT_FOUND for unknown provider', async () => {
-    const error = await expectLeftTagAsync(
+    const error = await expectFailureTag(
       adapter.getProvider('nonexistent'),
       'AcuityError'
     );
@@ -339,7 +337,7 @@ describe('Acuity Adapter Client Operations', () => {
   });
 
   it('finds existing client by email', async () => {
-    const result = await expectRightAsync(
+    const result = await expectSuccess(
       adapter.findOrCreateClient({
         firstName: 'John',
         lastName: 'Doe',
@@ -352,7 +350,7 @@ describe('Acuity Adapter Client Operations', () => {
   });
 
   it('indicates new client when email not found', async () => {
-    const result = await expectRightAsync(
+    const result = await expectSuccess(
       adapter.findOrCreateClient({
         firstName: 'New',
         lastName: 'Client',
@@ -365,7 +363,7 @@ describe('Acuity Adapter Client Operations', () => {
   });
 
   it('returns null for unknown client email', async () => {
-    const client = await expectRightAsync(
+    const client = await expectSuccess(
       adapter.getClientByEmail('unknown@example.com')
     );
 

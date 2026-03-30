@@ -4,8 +4,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Effect, Exit, Cause } from 'effect';
-
+import { Effect } from 'effect';
 import {
   completeBookingWithAltPayment,
   getAvailabilityWithService,
@@ -30,9 +29,9 @@ import {
   createDaySlots,
 } from '../../helpers/factories.js';
 import {
-  expectRightAsync,
-  expectLeftAsync,
-  expectLeftTagAsync,
+  expectSuccess,
+  expectFailure,
+  expectFailureTag,
 } from '../../helpers/effect.js';
 
 // =============================================================================
@@ -81,7 +80,6 @@ const createMockScheduler = (): SchedulingAdapter => ({
 
 const createMockPaymentAdapter = (name = 'cash'): PaymentAdapter => ({
   name,
-  displayName: name.charAt(0).toUpperCase() + name.slice(1),
   isAvailable: vi.fn(() => Effect.succeed(true)),
   createIntent: vi.fn(() => Effect.succeed(createPaymentIntent())),
   capturePayment: vi.fn(() => Effect.succeed(createPaymentResult())),
@@ -99,20 +97,18 @@ const createMockPaymentAdapter = (name = 'cash'): PaymentAdapter => ({
   verifyWebhook: vi.fn(() => Effect.succeed(true)),
   parseWebhook: vi.fn(() =>
     Effect.succeed({
-      type: 'payment.completed' as const,
+      type: 'payment.captured',
       intentId: 'pi_test_12345',
       transactionId: 'txn_test_12345',
       amount: 20000,
       currency: 'USD',
       timestamp: new Date().toISOString(),
-      raw: '{}',
     })
   ),
   getClientConfig: () => ({
-    name: 'cash',
+    enabled: true,
     displayName: 'Cash',
-    environment: 'production' as const,
-    supportedCurrencies: ['USD'],
+    instructions: 'Pay in cash at appointment',
   }),
 });
 
@@ -141,7 +137,7 @@ describe('completeBookingWithAltPayment', () => {
   });
 
   it('completes booking successfully with all steps', async () => {
-    const result = await expectRightAsync(completeBookingWithAltPayment(ctx, input));
+    const result = await expectSuccess(completeBookingWithAltPayment(ctx, input));
 
     expect(result.booking).toBeDefined();
     expect(result.payment).toBeDefined();
@@ -158,9 +154,9 @@ describe('completeBookingWithAltPayment', () => {
   });
 
   it('returns error for unknown payment method', async () => {
-    input = { ...input, paymentMethod: 'unknown' };
+    input.paymentMethod = 'unknown';
 
-    const error = await expectLeftTagAsync(
+    const error = await expectFailureTag(
       completeBookingWithAltPayment(ctx, input),
       'PaymentError'
     );
@@ -172,9 +168,9 @@ describe('completeBookingWithAltPayment', () => {
   });
 
   it('returns validation error for invalid request', async () => {
-    input = { ...input, request: { ...input.request, client: { ...input.request.client, email: 'invalid' } } };
+    input.request = { ...input.request, client: { ...input.request.client, email: 'invalid' } };
 
-    const error = await expectLeftTagAsync(
+    const error = await expectFailureTag(
       completeBookingWithAltPayment(ctx, input),
       'ValidationError'
     );
@@ -185,7 +181,7 @@ describe('completeBookingWithAltPayment', () => {
   it('returns reservation error when slot is taken', async () => {
     vi.mocked(scheduler.checkSlotAvailability).mockReturnValue(Effect.succeed(false));
 
-    const error = await expectLeftTagAsync(
+    const error = await expectFailureTag(
       completeBookingWithAltPayment(ctx, input),
       'ReservationError'
     );
@@ -201,7 +197,7 @@ describe('completeBookingWithAltPayment', () => {
       Effect.fail(Errors.payment('INTENT_FAILED', 'Failed to create intent', 'cash'))
     );
 
-    await expectLeftAsync(completeBookingWithAltPayment(ctx, input));
+    await expectFailure(completeBookingWithAltPayment(ctx, input));
 
     // Reservation should have been released
     expect(scheduler.releaseReservation).toHaveBeenCalled();
@@ -212,7 +208,7 @@ describe('completeBookingWithAltPayment', () => {
       Effect.fail(Errors.payment('CAPTURE_FAILED', 'Failed to capture payment', 'cash'))
     );
 
-    await expectLeftAsync(completeBookingWithAltPayment(ctx, input));
+    await expectFailure(completeBookingWithAltPayment(ctx, input));
 
     expect(scheduler.releaseReservation).toHaveBeenCalled();
   });
@@ -222,7 +218,7 @@ describe('completeBookingWithAltPayment', () => {
       Effect.fail(Errors.acuity('BOOKING_FAILED', 'Failed to create booking'))
     );
 
-    await expectLeftAsync(completeBookingWithAltPayment(ctx, input));
+    await expectFailure(completeBookingWithAltPayment(ctx, input));
 
     // Payment should have been refunded
     expect(paymentAdapter.refund).toHaveBeenCalled();
@@ -234,7 +230,7 @@ describe('completeBookingWithAltPayment', () => {
       Effect.fail(Errors.reservation('BLOCK_FAILED', 'Could not create block'))
     );
 
-    const result = await expectRightAsync(completeBookingWithAltPayment(ctx, input));
+    const result = await expectSuccess(completeBookingWithAltPayment(ctx, input));
 
     expect(result.booking).toBeDefined();
     expect(result.reservation).toBeUndefined();
@@ -253,7 +249,7 @@ describe('getAvailabilityWithService', () => {
   });
 
   it('returns service with available dates', async () => {
-    const result = await expectRightAsync(
+    const result = await expectSuccess(
       getAvailabilityWithService(scheduler, {
         serviceId: '12345',
         startDate: '2026-02-01',
@@ -268,7 +264,7 @@ describe('getAvailabilityWithService', () => {
   });
 
   it('passes provider ID when specified', async () => {
-    await expectRightAsync(
+    await expectSuccess(
       getAvailabilityWithService(scheduler, {
         serviceId: '12345',
         providerId: '67890',
@@ -287,7 +283,7 @@ describe('getAvailabilityWithService', () => {
       Effect.fail(Errors.acuity('NOT_FOUND', 'Service not found'))
     );
 
-    const error = await expectLeftTagAsync(
+    const error = await expectFailureTag(
       getAvailabilityWithService(scheduler, {
         serviceId: 'unknown',
         startDate: '2026-02-01',
@@ -312,7 +308,7 @@ describe('getTimeSlotsWithService', () => {
   });
 
   it('returns service with time slots', async () => {
-    const result = await expectRightAsync(
+    const result = await expectSuccess(
       getTimeSlotsWithService(scheduler, {
         serviceId: '12345',
         date: '2026-02-15',
@@ -329,7 +325,7 @@ describe('getTimeSlotsWithService', () => {
       Effect.fail(Errors.acuity('API_ERROR', 'Failed to fetch slots'))
     );
 
-    const error = await expectLeftAsync(
+    const error = await expectFailure(
       getTimeSlotsWithService(scheduler, {
         serviceId: '12345',
         date: '2026-02-15',
@@ -360,7 +356,7 @@ describe('cancelBookingWithRefund', () => {
   });
 
   it('cancels booking without refund', async () => {
-    const result = await expectRightAsync(
+    const result = await expectSuccess(
       cancelBookingWithRefund(ctx, {
         bookingId: '100001',
         reason: 'Customer request',
@@ -383,7 +379,7 @@ describe('cancelBookingWithRefund', () => {
       )
     );
 
-    const result = await expectRightAsync(
+    const result = await expectSuccess(
       cancelBookingWithRefund(ctx, {
         bookingId: '100001',
         refund: true,
@@ -407,7 +403,7 @@ describe('cancelBookingWithRefund', () => {
       )
     );
 
-    const result = await expectRightAsync(
+    const result = await expectSuccess(
       cancelBookingWithRefund(ctx, {
         bookingId: '100001',
         refund: true,
@@ -427,7 +423,7 @@ describe('cancelBookingWithRefund', () => {
       )
     );
 
-    const result = await expectRightAsync(
+    const result = await expectSuccess(
       cancelBookingWithRefund(ctx, {
         bookingId: '100001',
         refund: true,
@@ -443,7 +439,7 @@ describe('cancelBookingWithRefund', () => {
       Effect.fail(Errors.acuity('NOT_FOUND', 'Booking not found'))
     );
 
-    const error = await expectLeftTagAsync(
+    const error = await expectFailureTag(
       cancelBookingWithRefund(ctx, { bookingId: 'unknown' }),
       'AcuityError'
     );
@@ -490,7 +486,7 @@ describe('createSchedulingKit', () => {
   it('completeBooking delegates to pipeline', async () => {
     const kit = createSchedulingKit(scheduler, [paymentAdapter]);
 
-    const result = await expectRightAsync(
+    const result = await expectSuccess(
       kit.completeBooking(createBookingRequest(), 'cash')
     );
 
@@ -500,7 +496,7 @@ describe('createSchedulingKit', () => {
   it('getAvailability delegates to pipeline', async () => {
     const kit = createSchedulingKit(scheduler, []);
 
-    const result = await expectRightAsync(
+    const result = await expectSuccess(
       kit.getAvailability({
         serviceId: '12345',
         startDate: '2026-02-01',
@@ -515,7 +511,7 @@ describe('createSchedulingKit', () => {
   it('getTimeSlots delegates to pipeline', async () => {
     const kit = createSchedulingKit(scheduler, []);
 
-    const result = await expectRightAsync(
+    const result = await expectSuccess(
       kit.getTimeSlots({
         serviceId: '12345',
         date: '2026-02-15',
@@ -528,7 +524,7 @@ describe('createSchedulingKit', () => {
   it('cancelBooking delegates to pipeline', async () => {
     const kit = createSchedulingKit(scheduler, [paymentAdapter]);
 
-    const result = await expectRightAsync(
+    const result = await expectSuccess(
       kit.cancelBooking({ bookingId: '100001' })
     );
 

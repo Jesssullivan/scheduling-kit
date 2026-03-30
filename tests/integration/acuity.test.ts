@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
-import * as E from 'fp-ts/Either';
+import { Effect, Exit, Cause, Option } from 'effect';
 import { createAcuityAdapter } from '../../src/adapters/acuity.js';
 import type { SchedulingAdapter } from '../../src/adapters/types.js';
 import { server } from '../../src/tests/mocks/server.js';
@@ -14,9 +14,9 @@ import {
   getAcuityMockState,
 } from '../../src/tests/mocks/handlers/index.js';
 import {
-  expectRightAsync,
-  expectLeftTagAsync,
-} from '../../src/tests/helpers/fp-ts.js';
+  expectSuccess,
+  expectFailureTag,
+} from '../../src/tests/helpers/effect.js';
 
 // MSW server lifecycle
 beforeAll(() => {
@@ -45,18 +45,18 @@ describe('Acuity Integration: Full Booking Lifecycle', () => {
 
   it('creates and cancels a booking', async () => {
     // 1. Get available services
-    const services = await expectRightAsync(adapter.getServices());
+    const services = await expectSuccess(adapter.getServices());
     expect(services.length).toBeGreaterThan(0);
     const service = services.find(s => s.name.includes('TMD 60'));
     expect(service).toBeDefined();
 
     // 2. Get providers for the service
-    const providers = await expectRightAsync(adapter.getProviders());
+    const providers = await expectSuccess(adapter.getProviders());
     expect(providers.length).toBeGreaterThan(0);
     const provider = providers[0];
 
     // 3. Check availability dates
-    const dates = await expectRightAsync(
+    const dates = await expectSuccess(
       adapter.getAvailableDates({
         serviceId: service!.id,
         providerId: provider.id,
@@ -67,7 +67,7 @@ describe('Acuity Integration: Full Booking Lifecycle', () => {
     expect(dates.length).toBeGreaterThan(0);
 
     // 4. Get time slots for a specific date
-    const slots = await expectRightAsync(
+    const slots = await expectSuccess(
       adapter.getAvailableSlots({
         serviceId: service!.id,
         providerId: provider.id,
@@ -79,7 +79,7 @@ describe('Acuity Integration: Full Booking Lifecycle', () => {
     expect(availableSlot).toBeDefined();
 
     // 5. Create a booking
-    const booking = await expectRightAsync(
+    const booking = await expectSuccess(
       adapter.createBooking({
         serviceId: service!.id,
         providerId: provider.id,
@@ -98,20 +98,19 @@ describe('Acuity Integration: Full Booking Lifecycle', () => {
     expect(booking.serviceId).toBe(service!.id);
 
     // 6. Verify booking can be retrieved
-    const retrieved = await expectRightAsync(adapter.getBooking(booking.id));
+    const retrieved = await expectSuccess(adapter.getBooking(booking.id));
     expect(retrieved.id).toBe(booking.id);
 
     // 7. Cancel the booking
-    const cancelResult = await adapter.cancelBooking(booking.id, 'Integration test cleanup')();
-    expect(E.isRight(cancelResult)).toBe(true);
+    await expectSuccess(adapter.cancelBooking(booking.id, 'Integration test cleanup'));
   });
 
   it('creates reservation (block) for slot protection', async () => {
-    const services = await expectRightAsync(adapter.getServices());
-    const providers = await expectRightAsync(adapter.getProviders());
+    const services = await expectSuccess(adapter.getServices());
+    const providers = await expectSuccess(adapter.getProviders());
 
     // Create a reservation
-    const reservation = await expectRightAsync(
+    const reservation = await expectSuccess(
       adapter.createReservation({
         serviceId: services[0].id,
         providerId: providers[0].id,
@@ -129,7 +128,7 @@ describe('Acuity Integration: Full Booking Lifecycle', () => {
     expect(mockState.blocks.size).toBe(1);
 
     // Release the reservation
-    await expectRightAsync(adapter.releaseReservation(reservation.id));
+    await expectSuccess(adapter.releaseReservation(reservation.id));
 
     // Verify it's removed
     const stateAfter = getAcuityMockState();
@@ -138,7 +137,7 @@ describe('Acuity Integration: Full Booking Lifecycle', () => {
 
   it('handles slot taken scenario', async () => {
     // First booking takes the slot
-    const booking1 = await expectRightAsync(
+    const booking1 = await expectSuccess(
       adapter.createBooking({
         serviceId: '12345',
         providerId: '67890',
@@ -156,7 +155,7 @@ describe('Acuity Integration: Full Booking Lifecycle', () => {
 
     // Second booking tries the same slot
     // The mock should reject it (slot no longer available)
-    const slotCheck = await expectRightAsync(
+    const slotCheck = await expectSuccess(
       adapter.checkSlotAvailability({
         serviceId: '12345',
         providerId: '67890',
@@ -170,7 +169,7 @@ describe('Acuity Integration: Full Booking Lifecycle', () => {
 
   it('handles reschedule operation', async () => {
     // Create initial booking
-    const booking = await expectRightAsync(
+    const booking = await expectSuccess(
       adapter.createBooking({
         serviceId: '12345',
         datetime: '2026-02-15T19:00:00.000Z',
@@ -184,7 +183,7 @@ describe('Acuity Integration: Full Booking Lifecycle', () => {
     );
 
     // Reschedule to a new time
-    const rescheduled = await expectRightAsync(
+    const rescheduled = await expectSuccess(
       adapter.rescheduleBooking(booking.id, '2026-02-16T20:00:00.000Z')
     );
 
@@ -207,7 +206,7 @@ describe('Acuity Integration: Error Handling', () => {
   it('handles authentication failure', async () => {
     configureAcuityMock({ simulateAuthFailure: true });
 
-    const error = await expectLeftTagAsync(
+    const error = await expectFailureTag(
       adapter.getServices(),
       'AcuityError'
     );
@@ -225,7 +224,7 @@ describe('Acuity Integration: Error Handling', () => {
     configureAcuityMock({ simulateRateLimit: true });
 
     // Rate limit is one-shot in mock, so retry should succeed
-    const services = await expectRightAsync(adapter.getServices());
+    const services = await expectSuccess(adapter.getServices());
     expect(services.length).toBeGreaterThan(0);
   });
 
@@ -233,15 +232,15 @@ describe('Acuity Integration: Error Handling', () => {
     configureAcuityMock({ failNextRequest: true });
 
     // Server error should be returned as AcuityError
-    const result = await adapter.getServices()();
+    const exit = await Effect.runPromiseExit(adapter.getServices());
 
     // Could be success (if retry succeeds) or failure
     // Just verify it doesn't hang or throw
-    expect(result).toBeDefined();
+    expect(exit).toBeDefined();
   });
 
   it('returns error for unknown resources', async () => {
-    const error = await expectLeftTagAsync(
+    const error = await expectFailureTag(
       adapter.getBooking('nonexistent-booking-id'),
       'AcuityError'
     );
@@ -267,7 +266,7 @@ describe('Acuity Integration: Client Operations', () => {
   });
 
   it('finds existing client by email', async () => {
-    const result = await expectRightAsync(
+    const result = await expectSuccess(
       adapter.findOrCreateClient({
         firstName: 'John',
         lastName: 'Doe',
@@ -280,7 +279,7 @@ describe('Acuity Integration: Client Operations', () => {
   });
 
   it('indicates new client for unknown email', async () => {
-    const result = await expectRightAsync(
+    const result = await expectSuccess(
       adapter.findOrCreateClient({
         firstName: 'New',
         lastName: 'Customer',
@@ -293,7 +292,7 @@ describe('Acuity Integration: Client Operations', () => {
   });
 
   it('returns null for unknown client email lookup', async () => {
-    const client = await expectRightAsync(
+    const client = await expectSuccess(
       adapter.getClientByEmail('definitely.not.found@example.com')
     );
 
@@ -313,7 +312,7 @@ describe('Acuity Integration: Availability Queries', () => {
   });
 
   it('returns dates within the requested range', async () => {
-    const dates = await expectRightAsync(
+    const dates = await expectSuccess(
       adapter.getAvailableDates({
         serviceId: '12345',
         startDate: '2026-02-01',
@@ -331,7 +330,7 @@ describe('Acuity Integration: Availability Queries', () => {
   });
 
   it('returns time slots for a specific date', async () => {
-    const slots = await expectRightAsync(
+    const slots = await expectSuccess(
       adapter.getAvailableSlots({
         serviceId: '12345',
         date: '2026-02-15',
@@ -347,10 +346,10 @@ describe('Acuity Integration: Availability Queries', () => {
   });
 
   it('filters availability by provider', async () => {
-    const providers = await expectRightAsync(adapter.getProviders());
+    const providers = await expectSuccess(adapter.getProviders());
     const provider = providers[0];
 
-    const slots = await expectRightAsync(
+    const slots = await expectSuccess(
       adapter.getAvailableSlots({
         serviceId: '12345',
         providerId: provider.id,
@@ -365,7 +364,7 @@ describe('Acuity Integration: Availability Queries', () => {
   });
 
   it('checkSlotAvailability returns boolean', async () => {
-    const available = await expectRightAsync(
+    const available = await expectSuccess(
       adapter.checkSlotAvailability({
         serviceId: '12345',
         datetime: '2026-02-15T14:00:00.000Z',

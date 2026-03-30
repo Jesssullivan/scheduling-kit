@@ -4,12 +4,12 @@
  */
 
 import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest';
-
+import { Effect } from 'effect';
 import { createVenmoAdapter } from '../../../payments/venmo.js';
 import type { PaymentAdapter } from '../../../payments/types.js';
 import { server } from '../../mocks/server.js';
 import { resetPayPalMockState, configurePayPalMock } from '../../mocks/handlers/index.js';
-import { expectRightAsync, expectLeftTagAsync } from '../../helpers/effect.js';
+import { expectSuccess, expectFailureTag } from '../../helpers/effect.js';
 
 // MSW server lifecycle
 beforeAll(() => {
@@ -30,7 +30,6 @@ describe('Venmo Adapter', () => {
 
   beforeAll(() => {
     adapter = createVenmoAdapter({
-      type: 'venmo',
       clientId: 'test-client-id',
       clientSecret: 'test-client-secret',
       environment: 'sandbox',
@@ -40,14 +39,14 @@ describe('Venmo Adapter', () => {
 
   describe('isAvailable', () => {
     it('returns true when service is available', async () => {
-      const result = await expectRightAsync(adapter.isAvailable());
+      const result = await expectSuccess(adapter.isAvailable());
       expect(result).toBe(true);
     });
   });
 
   describe('createIntent', () => {
     it('creates a payment intent successfully', async () => {
-      const intent = await expectRightAsync(
+      const intent = await expectSuccess(
         adapter.createIntent({
           amount: 20000, // $200.00 in cents
           currency: 'USD',
@@ -64,7 +63,7 @@ describe('Venmo Adapter', () => {
     });
 
     it('includes metadata in intent', async () => {
-      const intent = await expectRightAsync(
+      const intent = await expectSuccess(
         adapter.createIntent({
           amount: 15000,
           currency: 'USD',
@@ -81,7 +80,7 @@ describe('Venmo Adapter', () => {
     it('handles API errors gracefully', async () => {
       configurePayPalMock({ failNextRequest: true });
 
-      const error = await expectLeftTagAsync(
+      const error = await expectFailureTag(
         adapter.createIntent({
           amount: 20000,
           currency: 'USD',
@@ -103,7 +102,7 @@ describe('Venmo Adapter', () => {
   describe('capturePayment', () => {
     it('captures an approved order successfully', async () => {
       // First create an intent
-      const intent = await expectRightAsync(
+      const intent = await expectSuccess(
         adapter.createIntent({
           amount: 20000,
           currency: 'USD',
@@ -113,7 +112,7 @@ describe('Venmo Adapter', () => {
       );
 
       // Then capture it
-      const result = await expectRightAsync(adapter.capturePayment(intent.id));
+      const result = await expectSuccess(adapter.capturePayment(intent.id));
 
       expect(result.success).toBe(true);
       expect(result.transactionId).toBeDefined();
@@ -126,7 +125,7 @@ describe('Venmo Adapter', () => {
     it('handles capture failure', async () => {
       configurePayPalMock({ simulateCaptureFailure: true });
 
-      const error = await expectLeftTagAsync(
+      const error = await expectFailureTag(
         adapter.capturePayment('order_to_fail'),
         'PaymentError'
       );
@@ -142,13 +141,13 @@ describe('Venmo Adapter', () => {
   describe('cancelIntent', () => {
     it('cancels an intent (no-op for PayPal)', async () => {
       // PayPal orders can't be explicitly cancelled, they expire
-      await expectRightAsync(adapter.cancelIntent('order_to_cancel'));
+      await Effect.runPromise(adapter.cancelIntent('order_to_cancel'));
     });
   });
 
   describe('refund', () => {
     it('processes a full refund successfully', async () => {
-      const refund = await expectRightAsync(
+      const refund = await expectSuccess(
         adapter.refund({
           transactionId: 'capture_12345',
           reason: 'Customer requested cancellation',
@@ -163,7 +162,7 @@ describe('Venmo Adapter', () => {
     });
 
     it('processes a partial refund', async () => {
-      const refund = await expectRightAsync(
+      const refund = await expectSuccess(
         adapter.refund({
           transactionId: 'capture_67890',
           amount: 10000, // $100 partial refund
@@ -178,7 +177,7 @@ describe('Venmo Adapter', () => {
     it('handles refund failure', async () => {
       configurePayPalMock({ simulateRefundFailure: true });
 
-      const error = await expectLeftTagAsync(
+      const error = await expectFailureTag(
         adapter.refund({
           transactionId: 'capture_fail',
           reason: 'Test failure',
@@ -220,7 +219,7 @@ describe('Venmo Adapter', () => {
         },
       });
 
-      const event = await expectRightAsync(adapter.parseWebhook(payload));
+      const event = await expectSuccess(adapter.parseWebhook(payload));
 
       expect(event.type).toBe('payment.completed');
       expect(event.transactionId).toBe('capture_webhook_test');
@@ -239,7 +238,7 @@ describe('Venmo Adapter', () => {
         },
       });
 
-      const event = await expectRightAsync(adapter.parseWebhook(payload));
+      const event = await expectSuccess(adapter.parseWebhook(payload));
 
       expect(event.type).toBe('payment.failed');
       expect(event.transactionId).toBe('capture_denied');
@@ -255,7 +254,7 @@ describe('Venmo Adapter', () => {
         },
       });
 
-      const event = await expectRightAsync(adapter.parseWebhook(payload));
+      const event = await expectSuccess(adapter.parseWebhook(payload));
 
       expect(event.type).toBe('refund.completed');
       expect(event.amount).toBe(15000);
@@ -271,14 +270,14 @@ describe('Venmo Adapter', () => {
         },
       });
 
-      const event = await expectRightAsync(adapter.parseWebhook(payload));
+      const event = await expectSuccess(adapter.parseWebhook(payload));
 
       // Unknown events default to payment.failed
       expect(event.type).toBe('payment.failed');
     });
 
     it('handles invalid JSON payload', async () => {
-      const error = await expectLeftTagAsync(
+      const error = await expectFailureTag(
         adapter.parseWebhook('invalid json'),
         'PaymentError'
       );
@@ -297,7 +296,6 @@ describe('Venmo Adapter Transformers', () => {
 
   beforeAll(() => {
     adapter = createVenmoAdapter({
-      type: 'venmo',
       clientId: 'test-client-id',
       clientSecret: 'test-client-secret',
       environment: 'sandbox',
@@ -308,7 +306,7 @@ describe('Venmo Adapter Transformers', () => {
   describe('amount conversion', () => {
     it('correctly converts cents to dollars for API', async () => {
       // Create intent with $1.00 (100 cents)
-      const intent = await expectRightAsync(
+      const intent = await expectSuccess(
         adapter.createIntent({
           amount: 100,
           currency: 'USD',
@@ -332,7 +330,7 @@ describe('Venmo Adapter Transformers', () => {
         },
       });
 
-      const event = await expectRightAsync(adapter.parseWebhook(payload));
+      const event = await expectSuccess(adapter.parseWebhook(payload));
 
       // Should be converted to cents
       expect(event.amount).toBe(20000);
@@ -342,7 +340,7 @@ describe('Venmo Adapter Transformers', () => {
   describe('status mapping', () => {
     it('maps PayPal CREATED status to pending', async () => {
       // Default mock returns CREATED status
-      const intent = await expectRightAsync(
+      const intent = await expectSuccess(
         adapter.createIntent({
           amount: 10000,
           currency: 'USD',

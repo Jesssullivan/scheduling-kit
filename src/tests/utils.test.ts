@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fc from 'fast-check';
-import { Effect } from 'effect';
+import { Effect, Exit, Cause, pipe } from 'effect';
 import { z } from 'zod';
 
 import {
@@ -25,35 +25,68 @@ import {
   withIdempotency,
 } from '../core/utils.js';
 import { Errors } from '../core/types.js';
-import { expectSuccess, expectFailure, expectFailureTag } from './helpers/effect.js';
+import type { SchedulingError } from '../core/types.js';
+
+/** Helper: run an Effect and return the Exit */
+const runExit = <A>(effect: Effect.Effect<A, SchedulingError>) =>
+  Effect.runPromiseExit(effect);
+
+/** Helper: assert success and return value */
+const expectSuccess = async <A>(effect: Effect.Effect<A, SchedulingError>): Promise<A> => {
+  const exit = await runExit(effect);
+  expect(Exit.isSuccess(exit), `Expected success but got failure`).toBe(true);
+  if (Exit.isSuccess(exit)) return exit.value;
+  throw new Error('Unreachable');
+};
+
+/** Helper: assert failure and return error */
+const expectFailure = async <A>(effect: Effect.Effect<A, SchedulingError>): Promise<SchedulingError> => {
+  const exit = await runExit(effect);
+  expect(Exit.isFailure(exit), `Expected failure but got success`).toBe(true);
+  if (Exit.isFailure(exit)) {
+    const opt = Cause.failureOption(exit.cause);
+    if (opt._tag === 'Some') return opt.value;
+  }
+  throw new Error('Unreachable');
+};
 
 describe('Promise Converters', () => {
   describe('fromPromise', () => {
     it('converts successful promise to success', async () => {
-      const value = await expectSuccess(
-        fromPromise(() => Promise.resolve(42), () => Errors.infrastructure('TEST' as any, 'fail'))
+      const result = await expectSuccess(
+        fromPromise(
+          () => Promise.resolve(42),
+          () => Errors.infrastructure('TEST', 'Should not fail')
+        )
       );
-      expect(value).toBe(42);
+
+      expect(result).toBe(42);
     });
 
     it('converts rejected promise to failure with mapped error', async () => {
       const error = await expectFailure(
         fromPromise(
           () => Promise.reject(new Error('boom')),
-          (e) => Errors.infrastructure('TEST' as any, String(e))
+          (e) => Errors.infrastructure('TEST', String(e))
         )
       );
+
       expect(error._tag).toBe('InfrastructureError');
-      expect((error as any).message).toContain('boom');
+      expect(error.message).toContain('boom');
     });
 
-    it('is lazy — does not run until executed', async () => {
+    it('preserves async behavior', async () => {
       let called = false;
       const effect = fromPromise(
-        async () => { called = true; return 'done'; },
-        () => Errors.infrastructure('TEST' as any, 'fail')
+        async () => {
+          await new Promise((r) => setTimeout(r, 10));
+          called = true;
+          return 'done';
+        },
+        () => Errors.infrastructure('TEST', 'fail')
       );
-      expect(called).toBe(false);
+
+      expect(called).toBe(false); // lazy
       await Effect.runPromise(effect);
       expect(called).toBe(true);
     });
@@ -63,10 +96,11 @@ describe('Promise Converters', () => {
     it('creates a function that returns Effect', async () => {
       const fetchUser = fromPromiseK(
         async (id: string) => ({ id, name: 'Test' }),
-        () => Errors.infrastructure('HTTP' as any, 'Failed')
+        () => Errors.infrastructure('HTTP', 'Failed')
       );
-      const value = await expectSuccess(fetchUser('123'));
-      expect(value).toEqual({ id: '123', name: 'Test' });
+
+      const result = await expectSuccess(fetchUser('123'));
+      expect(result).toEqual({ id: '123', name: 'Test' });
     });
   });
 });
@@ -78,48 +112,72 @@ describe('Validation', () => {
       age: z.number().positive(),
     });
 
-    it('succeeds for valid data', async () => {
-      const value = await expectSuccess(validateWith(TestSchema, { name: 'John', age: 30 }));
-      expect(value).toEqual({ name: 'John', age: 30 });
+    it('returns success for valid data', async () => {
+      const result = await expectSuccess(validateWith(TestSchema, { name: 'John', age: 30 }));
+      expect(result).toEqual({ name: 'John', age: 30 });
     });
 
-    it('fails with ValidationError for invalid data', async () => {
-      await expectFailureTag(validateWith(TestSchema, { name: '', age: -5 }), 'ValidationError');
+    it('returns failure with ValidationError for invalid data', async () => {
+      const error = await expectFailure(validateWith(TestSchema, { name: '', age: -5 }));
+      expect(error._tag).toBe('ValidationError');
     });
 
     it('transforms data through schema', async () => {
       const schema = z.string().transform((s) => s.toUpperCase());
-      const value = await expectSuccess(validateWith(schema, 'hello'));
-      expect(value).toBe('HELLO');
+      const result = await expectSuccess(validateWith(schema, 'hello'));
+      expect(result).toBe('HELLO');
     });
   });
 
   describe('validateFields', () => {
     it('validates multiple fields', async () => {
-      await expectSuccess(validateFields(
-        { email: z.string().email(), age: z.number().min(18) },
-        { email: 'test@example.com', age: 25 }
-      ));
+      const result = await expectSuccess(
+        validateFields(
+          {
+            email: z.string().email(),
+            age: z.number().min(18),
+          },
+          { email: 'test@example.com', age: 25 }
+        )
+      );
+
+      expect(result).toBeDefined();
     });
 
     it('collects multiple errors', async () => {
-      const error = await expectFailure(validateFields(
-        { email: z.string().email(), age: z.number().min(18) },
-        { email: 'invalid', age: 10 }
-      ));
+      const error = await expectFailure(
+        validateFields(
+          {
+            email: z.string().email(),
+            age: z.number().min(18),
+          },
+          { email: 'invalid', age: 10 }
+        )
+      );
+
       expect(error._tag).toBe('ValidationError');
-      expect((error as any).message).toContain('email');
-      expect((error as any).message).toContain('age');
+      expect(error.message).toContain('email');
+      expect(error.message).toContain('age');
     });
   });
 });
 
 describe('Retry & Resilience', () => {
   describe('withRetry', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
     it('returns success on first try if successful', async () => {
       const effect = Effect.succeed(42);
-      const value = await expectSuccess(withRetry({ maxAttempts: 3 })(effect));
-      expect(value).toBe(42);
+      const retried = withRetry({ maxAttempts: 3 })(effect);
+
+      const result = await expectSuccess(retried);
+      expect(result).toBe(42);
     });
 
     it('retries on infrastructure error', async () => {
@@ -127,23 +185,36 @@ describe('Retry & Resilience', () => {
       const effect = Effect.suspend(() => {
         attempts++;
         if (attempts < 3) {
-          return Effect.fail(Errors.infrastructure('NETWORK', 'Network error'));
+          return Effect.fail(Errors.infrastructure('NET', 'Network error'));
         }
         return Effect.succeed(42);
       });
 
-      const value = await expectSuccess(withRetry({ maxAttempts: 3, initialDelayMs: 1 })(effect));
+      const retried = withRetry({ maxAttempts: 3, initialDelayMs: 10 })(effect);
+
+      const resultPromise = Effect.runPromiseExit(retried);
+      await vi.runAllTimersAsync();
+      const exit = await resultPromise;
+
       expect(attempts).toBe(3);
-      expect(value).toBe(42);
+      expect(Exit.isSuccess(exit)).toBe(true);
     });
 
-    it('eventually fails after retries exhausted', async () => {
-      const error = await expectFailure(
-        withRetry({ maxAttempts: 1, initialDelayMs: 1 })(
-          Effect.fail(Errors.infrastructure('NETWORK', 'Always fails'))
-        )
-      );
-      expect(error._tag).toBe('InfrastructureError');
+    it('respects maxAttempts', async () => {
+      let attempts = 0;
+      const effect = Effect.suspend(() => {
+        attempts++;
+        return Effect.fail(Errors.infrastructure('NET', 'Always fails'));
+      });
+
+      const retried = withRetry({ maxAttempts: 2, initialDelayMs: 10 })(effect);
+
+      const resultPromise = Effect.runPromiseExit(retried);
+      await vi.runAllTimersAsync();
+      const exit = await resultPromise;
+
+      expect(attempts).toBe(2);
+      expect(Exit.isFailure(exit)).toBe(true);
     });
 
     it('does not retry validation errors by default', async () => {
@@ -153,53 +224,90 @@ describe('Retry & Resilience', () => {
         return Effect.fail(Errors.validation('field', 'Invalid'));
       });
 
-      await expectFailure(withRetry({ maxAttempts: 3, initialDelayMs: 1 })(effect));
-      expect(attempts).toBe(1);
+      const retried = withRetry({ maxAttempts: 3 })(effect);
+      await Effect.runPromiseExit(retried);
+
+      expect(attempts).toBe(1); // No retry
     });
   });
 
   describe('withTimeout', () => {
     it('returns result if completes in time', async () => {
-      const value = await expectSuccess(withTimeout<number>(1000)(Effect.succeed(42)));
-      expect(value).toBe(42);
+      const effect = Effect.succeed(42);
+      const timed = withTimeout<number>(1000)(effect);
+
+      const result = await expectSuccess(timed);
+      expect(result).toBe(42);
     });
 
     it('returns timeout error if too slow', async () => {
-      const slow = Effect.tryPromise(() => new Promise((r) => setTimeout(() => r(42), 500)));
-      const error = await expectFailure(withTimeout<number>(10)(slow as any));
+      const slowEffect = Effect.promise<number>(() =>
+        new Promise((resolve) => setTimeout(() => resolve(42), 500))
+      ).pipe(Effect.mapError(() => Errors.infrastructure('UNKNOWN', 'unreachable') as SchedulingError));
+
+      const timed = withTimeout<number>(10)(slowEffect as Effect.Effect<number, SchedulingError>);
+      const error = await expectFailure(timed);
+
       expect(error._tag).toBe('InfrastructureError');
-      expect((error as any).code).toBe('TIMEOUT');
+      if (error._tag === 'InfrastructureError') {
+        expect(error.code).toBe('TIMEOUT');
+      }
+    });
+
+    it('allows custom timeout error', async () => {
+      const slowEffect = Effect.promise<number>(() =>
+        new Promise((resolve) => setTimeout(() => resolve(42), 500))
+      ).pipe(Effect.mapError(() => Errors.infrastructure('UNKNOWN', 'unreachable') as SchedulingError));
+
+      const customError = Errors.infrastructure('CUSTOM_TIMEOUT', 'Too slow!');
+      const timed = withTimeout<number>(10, customError)(slowEffect as Effect.Effect<number, SchedulingError>);
+      const error = await expectFailure(timed);
+
+      expect(error._tag).toBe('InfrastructureError');
+      if (error._tag === 'InfrastructureError') {
+        expect(error.code).toBe('CUSTOM_TIMEOUT');
+      }
     });
   });
 });
 
 describe('Nullable Helpers', () => {
-  describe('fromOption (nullable)', () => {
-    it('succeeds for non-null value', async () => {
-      const value = await expectSuccess(fromOption(() => Errors.validation('test', 'Missing'))(42));
-      expect(value).toBe(42);
+  describe('fromOption', () => {
+    it('converts value to success', async () => {
+      const result = await expectSuccess(
+        fromOption(() => Errors.validation('test', 'Missing'))(42)
+      );
+      expect(result).toBe(42);
     });
 
-    it('fails for null', async () => {
-      await expectFailure(fromOption(() => Errors.validation('test', 'Missing'))(null));
-    });
-
-    it('fails for undefined', async () => {
-      await expectFailure(fromOption(() => Errors.validation('test', 'Missing'))(undefined));
+    it('converts null to failure', async () => {
+      const error = await expectFailure(
+        fromOption(() => Errors.validation('test', 'Missing'))(null)
+      );
+      expect(error._tag).toBe('ValidationError');
     });
   });
 
   describe('fromNullable', () => {
-    it('succeeds for value', async () => {
-      await expectSuccess(fromNullable(42, () => Errors.validation('test', 'Missing')));
+    it('converts value to success', async () => {
+      const result = await expectSuccess(
+        fromNullable(42, () => Errors.validation('test', 'Missing'))
+      );
+      expect(result).toBe(42);
     });
 
-    it('fails for null', async () => {
-      await expectFailure(fromNullable(null, () => Errors.validation('test', 'Missing')));
+    it('converts null to failure', async () => {
+      const error = await expectFailure(
+        fromNullable(null, () => Errors.validation('test', 'Missing'))
+      );
+      expect(error._tag).toBe('ValidationError');
     });
 
-    it('fails for undefined', async () => {
-      await expectFailure(fromNullable(undefined, () => Errors.validation('test', 'Missing')));
+    it('converts undefined to failure', async () => {
+      const error = await expectFailure(
+        fromNullable(undefined, () => Errors.validation('test', 'Missing'))
+      );
+      expect(error._tag).toBe('ValidationError');
     });
   });
 });
@@ -208,8 +316,8 @@ describe('Sequencing Helpers', () => {
   describe('sequenceResults', () => {
     it('collects all successful results', async () => {
       const effects = [Effect.succeed(1), Effect.succeed(2), Effect.succeed(3)];
-      const value = await expectSuccess(sequenceResults(effects));
-      expect(value).toEqual([1, 2, 3]);
+      const result = await expectSuccess(sequenceResults(effects));
+      expect(result).toEqual([1, 2, 3]);
     });
 
     it('fails on first error', async () => {
@@ -218,18 +326,33 @@ describe('Sequencing Helpers', () => {
         Effect.fail(Errors.validation('test', 'Error at 2')),
         Effect.succeed(3),
       ];
-      await expectFailure(sequenceResults(effects));
+      const error = await expectFailure(sequenceResults(effects));
+      expect(error._tag).toBe('ValidationError');
     });
   });
 
   describe('parallelResults', () => {
-    it('runs effects in parallel', async () => {
+    it('runs tasks in parallel', async () => {
+      const order: number[] = [];
       const effects = [
-        Effect.succeed(1),
-        Effect.succeed(2),
+        pipe(
+          Effect.succeed(1),
+          Effect.map((v) => {
+            order.push(v);
+            return v;
+          })
+        ),
+        pipe(
+          Effect.succeed(2),
+          Effect.map((v) => {
+            order.push(v);
+            return v;
+          })
+        ),
       ];
-      const value = await expectSuccess(parallelResults(effects));
-      expect(value).toEqual([1, 2]);
+
+      const result = await expectSuccess(parallelResults(effects));
+      expect(result).toEqual([1, 2]);
     });
   });
 });
@@ -237,13 +360,14 @@ describe('Sequencing Helpers', () => {
 describe('Error Recovery', () => {
   describe('recoverWith', () => {
     it('recovers from matching error', async () => {
-      const effect = Effect.fail(Errors.infrastructure('UNKNOWN', 'Missing'));
+      const effect = Effect.fail(Errors.infrastructure('NOT_FOUND', 'Missing'));
       const recovered = recoverWith<number>(
-        (e) => e._tag === 'InfrastructureError',
+        (e) => e._tag === 'InfrastructureError' && e.code === 'NOT_FOUND',
         0
       )(effect);
-      const value = await expectSuccess(recovered);
-      expect(value).toBe(0);
+
+      const result = await expectSuccess(recovered);
+      expect(result).toBe(0);
     });
 
     it('does not recover from non-matching error', async () => {
@@ -252,46 +376,56 @@ describe('Error Recovery', () => {
         (e) => e._tag === 'InfrastructureError',
         0
       )(effect);
-      await expectFailure(recovered);
+
+      const error = await expectFailure(recovered);
+      expect(error._tag).toBe('ValidationError');
     });
   });
 
   describe('mapError', () => {
     it('transforms errors', async () => {
-      const effect = Effect.fail(Errors.infrastructure('NETWORK', 'Network'));
+      const effect = Effect.fail(Errors.infrastructure('NET', 'Network'));
       const mapped = mapError(
-        (e) => Errors.infrastructure('UNKNOWN', `Wrapped: ${(e as any).message}`)
+        (e) => Errors.infrastructure('WRAPPED', `Wrapped: ${e.message}`)
       )(effect);
+
       const error = await expectFailure(mapped);
-      expect((error as any).message).toContain('Wrapped:');
+      expect(error.message).toContain('Wrapped:');
     });
   });
 });
 
 describe('Idempotency', () => {
   describe('withIdempotency', () => {
-    it('executes effect when key not found', async () => {
+    it('executes task when key not found', async () => {
       const store = {
         get: vi.fn().mockResolvedValue(null),
         set: vi.fn().mockResolvedValue(undefined),
       };
 
       const effect = Effect.succeed({ id: '123' });
-      const value = await expectSuccess(withIdempotency(store, 'test-key')(effect));
+      const idempotent = withIdempotency(store, 'test-key')(effect);
+
+      const result = await expectSuccess(idempotent);
 
       expect(store.get).toHaveBeenCalledWith('test-key');
       expect(store.set).toHaveBeenCalledWith('test-key', { id: '123' }, 86400);
-      expect(value).toEqual({ id: '123' });
+      expect(result).toEqual({ id: '123' });
     });
 
     it('returns idempotency error when key exists', async () => {
+      const existingResult = { id: '123' };
       const store = {
-        get: vi.fn().mockResolvedValue({ id: '123' }),
+        get: vi.fn().mockResolvedValue(existingResult),
         set: vi.fn().mockResolvedValue(undefined),
       };
 
       const effect = Effect.succeed({ id: '456' });
-      await expectFailureTag(withIdempotency(store, 'test-key')(effect), 'IdempotencyError');
+      const idempotent = withIdempotency(store, 'test-key')(effect);
+
+      const error = await expectFailure(idempotent);
+
+      expect(error._tag).toBe('IdempotencyError');
       expect(store.set).not.toHaveBeenCalled();
     });
   });
@@ -303,6 +437,7 @@ describe('UUID Generation', () => {
       fc.assert(
         fc.property(fc.constant(null), () => {
           const id = generateId();
+          // UUID v4 format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
           expect(id).toMatch(
             /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
           );
@@ -319,11 +454,13 @@ describe('UUID Generation', () => {
 
   describe('generateIdempotencyKey', () => {
     it('includes prefix', () => {
-      expect(generateIdempotencyKey('booking')).toMatch(/^booking_[0-9a-f-]+$/i);
+      const key = generateIdempotencyKey('booking');
+      expect(key).toMatch(/^booking_[0-9a-f-]+$/i);
     });
 
     it('defaults to "idem" prefix', () => {
-      expect(generateIdempotencyKey()).toMatch(/^idem_[0-9a-f-]+$/i);
+      const key = generateIdempotencyKey();
+      expect(key).toMatch(/^idem_[0-9a-f-]+$/i);
     });
   });
 });
@@ -333,8 +470,9 @@ describe('Property-based tests', () => {
     it('round-trips valid strings', () => {
       fc.assert(
         fc.asyncProperty(fc.string({ minLength: 1 }), async (s) => {
-          const value = await expectSuccess(validateWith(z.string().min(1), s));
-          expect(value).toBe(s);
+          const schema = z.string().min(1);
+          const result = await expectSuccess(validateWith(schema, s));
+          expect(result).toBe(s);
         })
       );
     });
@@ -344,7 +482,9 @@ describe('Property-based tests', () => {
         fc.asyncProperty(
           fc.string().filter((s) => !s.includes('@') || !s.includes('.')),
           async (s) => {
-            await expectFailure(validateWith(z.string().email(), s));
+            const schema = z.string().email();
+            const error = await expectFailure(validateWith(schema, s));
+            expect(error._tag).toBe('ValidationError');
           }
         ),
         { numRuns: 50 }
@@ -358,7 +498,10 @@ describe('Property-based tests', () => {
         fc.asyncProperty(
           fc.anything().filter((x) => x !== null && x !== undefined),
           async (value) => {
-            await expectSuccess(fromNullable(value, () => Errors.validation('test', 'Missing')));
+            const result = await expectSuccess(
+              fromNullable(value, () => Errors.validation('test', 'Missing'))
+            );
+            expect(result).toBeDefined();
           }
         ),
         { numRuns: 100 }

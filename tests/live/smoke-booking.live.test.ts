@@ -18,7 +18,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { Effect } from 'effect';
+import { Effect, Exit, Cause, Option } from 'effect';
 import type { Browser, Page } from 'playwright';
 import {
 	BrowserService,
@@ -35,7 +35,7 @@ import {
 	toBooking,
 } from '../../src/middleware/steps/index.js';
 import { createScraperAdapter } from '../../src/adapters/acuity-scraper.js';
-import * as E from 'fp-ts/Either';
+import type { SchedulingError } from '../../src/core/types.js';
 
 const RUN_SMOKE = process.env.RUN_SMOKE_TEST === 'true';
 const ACUITY_BASE_URL = 'https://MassageIthaca.as.me';
@@ -47,6 +47,17 @@ const TEST_CLIENT = {
 	lastName: 'TestBooking',
 	email: 'smoketest@massageithaca.com',
 	phone: '6075551234',
+};
+
+/** Run an Effect and return { ok, value } or { ok, error } */
+const run = async <A>(effect: Effect.Effect<A, SchedulingError>): Promise<
+	{ ok: true; value: A } | { ok: false; error: SchedulingError }
+> => {
+	const exit = await Effect.runPromiseExit(effect);
+	if (Exit.isSuccess(exit)) return { ok: true, value: exit.value };
+	const failure = Cause.failureOption(exit.cause);
+	if (Option.isSome(failure)) return { ok: false, error: failure.value };
+	throw new Error(`Unexpected defect: ${Cause.pretty(exit.cause)}`);
 };
 
 describe.skipIf(!RUN_SMOKE)('Smoke Test: Full Booking Flow', () => {
@@ -68,11 +79,11 @@ describe.skipIf(!RUN_SMOKE)('Smoke Test: Full Booking Flow', () => {
 			});
 
 			// Get services
-			const servicesResult = await scraper.getServices()();
-			expect(E.isRight(servicesResult)).toBe(true);
-			if (!E.isRight(servicesResult)) return;
+			const servicesResult = await run(scraper.getServices());
+			expect(servicesResult.ok).toBe(true);
+			if (!servicesResult.ok) return;
 
-			const services = servicesResult.right;
+			const services = servicesResult.value;
 			console.log(`  Found ${services.length} services`);
 
 			// Pick the first service with available slots
@@ -85,14 +96,14 @@ describe.skipIf(!RUN_SMOKE)('Smoke Test: Full Booking Flow', () => {
 				];
 
 				for (const month of months) {
-					const datesResult = await scraper.getAvailableDates(service.id, month)();
-					if (!E.isRight(datesResult) || datesResult.right.length === 0) continue;
+					const datesResult = await run(scraper.getAvailableDates(service.id, month));
+					if (!datesResult.ok || datesResult.value.length === 0) continue;
 
-					const date = datesResult.right[0];
-					const slotsResult = await scraper.getTimeSlots(service.id, date)();
-					if (!E.isRight(slotsResult) || slotsResult.right.length === 0) continue;
+					const date = datesResult.value[0];
+					const slotsResult = await run(scraper.getTimeSlots(service.id, date));
+					if (!slotsResult.ok || slotsResult.value.length === 0) continue;
 
-					const slot = slotsResult.right.find((s) => s.available);
+					const slot = slotsResult.value.find((s) => s.available);
 					if (!slot) continue;
 
 					targetServiceName = service.name;

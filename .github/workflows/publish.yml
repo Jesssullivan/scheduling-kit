@@ -12,7 +12,37 @@ on:
         default: true
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Sync SvelteKit
+        run: npx svelte-kit sync
+
+      - name: Run tests
+        run: pnpm test:unit
+
+      - name: Build
+        run: pnpm build
+
+      - name: Validate package
+        run: pnpm exec publint
+
   publish-npm:
+    needs: [test]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -38,7 +68,7 @@ jobs:
 
       - name: Publish to npm
         if: ${{ github.event_name == 'release' || github.event.inputs.dry_run != 'true' }}
-        run: npm publish --access public
+        run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -49,6 +79,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-github:
+    needs: [test]
     runs-on: ubuntu-latest
     permissions:
       contents: read

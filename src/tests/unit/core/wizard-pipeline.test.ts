@@ -10,8 +10,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
-import { Effect, Exit, Cause } from 'effect';
-
+import { Effect } from 'effect';
 import {
   createSchedulingKit,
   type SchedulingKit,
@@ -28,9 +27,9 @@ import {
   createDaySlots,
 } from '../../helpers/factories.js';
 import {
-  expectRightAsync,
-  expectLeftAsync,
-  expectLeftTagAsync,
+  expectSuccess,
+  expectFailure,
+  expectFailureTag,
 } from '../../helpers/effect.js';
 
 // =============================================================================
@@ -209,7 +208,7 @@ describe('Wizard Adapter + Pipeline Integration', () => {
 
   describe('read pipelines (scraper delegation)', () => {
     it('getAvailability returns service + dates from scraper', async () => {
-      const result = await expectRightAsync(
+      const result = await expectSuccess(
         kit.getAvailability({
           serviceId: '82429463',
           startDate: '2026-03-01',
@@ -229,7 +228,7 @@ describe('Wizard Adapter + Pipeline Integration', () => {
     });
 
     it('getTimeSlots returns service + slots from scraper', async () => {
-      const result = await expectRightAsync(
+      const result = await expectSuccess(
         kit.getTimeSlots({
           serviceId: '82429463',
           date: '2026-03-02',
@@ -251,7 +250,7 @@ describe('Wizard Adapter + Pipeline Integration', () => {
         Effect.fail(Errors.acuity('NOT_FOUND', 'Service 99999 not found'))
       );
 
-      const error = await expectLeftTagAsync(
+      const error = await expectFailureTag(
         kit.getAvailability({
           serviceId: '99999',
           startDate: '2026-03-01',
@@ -278,7 +277,7 @@ describe('Wizard Adapter + Pipeline Integration', () => {
         datetime: '2026-03-02T15:00:00.000Z',
       });
 
-      const result = await expectRightAsync(kit.completeBooking(request, 'cash'));
+      const result = await expectSuccess(kit.completeBooking(request, 'cash'));
 
       expect(result.booking).toBeDefined();
       expect(result.booking.status).toBe('confirmed');
@@ -301,7 +300,7 @@ describe('Wizard Adapter + Pipeline Integration', () => {
         datetime: '2026-03-02T15:00:00.000Z',
       });
 
-      const result = await expectRightAsync(kit.completeBooking(request, 'venmo'));
+      const result = await expectSuccess(kit.completeBooking(request, 'venmo'));
 
       expect(result.booking.paymentRef).toContain('[VENMO]');
       expect(venmoAdapter.createIntent).toHaveBeenCalled();
@@ -311,7 +310,7 @@ describe('Wizard Adapter + Pipeline Integration', () => {
     it('skips reservation gracefully (wizard adapter returns BLOCK_FAILED)', async () => {
       const request = createBookingRequest();
 
-      const result = await expectRightAsync(kit.completeBooking(request, 'cash'));
+      const result = await expectSuccess(kit.completeBooking(request, 'cash'));
 
       // Pipeline should have tried reservation and continued without one
       expect(wizardAdapter.createReservation).toHaveBeenCalled();
@@ -322,7 +321,7 @@ describe('Wizard Adapter + Pipeline Integration', () => {
     it('passes payment ref and processor to createBookingWithPaymentRef', async () => {
       const request = createBookingRequest();
 
-      await expectRightAsync(kit.completeBooking(request, 'cash'));
+      await expectSuccess(kit.completeBooking(request, 'cash'));
 
       expect(wizardAdapter.createBookingWithPaymentRef).toHaveBeenCalledWith(
         expect.objectContaining({ serviceId: request.serviceId }),
@@ -338,7 +337,7 @@ describe('Wizard Adapter + Pipeline Integration', () => {
 
   describe('compensation on failure', () => {
     it('returns PaymentError for unknown payment method', async () => {
-      const error = await expectLeftTagAsync(
+      const error = await expectFailureTag(
         kit.completeBooking(createBookingRequest(), 'bitcoin'),
         'PaymentError'
       );
@@ -351,7 +350,7 @@ describe('Wizard Adapter + Pipeline Integration', () => {
     it('returns ReservationError when slot is taken', async () => {
       vi.mocked(wizardAdapter.checkSlotAvailability).mockReturnValue(Effect.succeed(false));
 
-      const error = await expectLeftTagAsync(
+      const error = await expectFailureTag(
         kit.completeBooking(createBookingRequest(), 'cash'),
         'ReservationError'
       );
@@ -366,7 +365,7 @@ describe('Wizard Adapter + Pipeline Integration', () => {
         Effect.fail(Errors.payment('INTENT_FAILED', 'Card declined', 'cash'))
       );
 
-      await expectLeftTagAsync(
+      await expectFailureTag(
         kit.completeBooking(createBookingRequest(), 'cash'),
         'PaymentError'
       );
@@ -380,7 +379,7 @@ describe('Wizard Adapter + Pipeline Integration', () => {
         Effect.fail(Errors.payment('CAPTURE_FAILED', 'Capture failed', 'cash'))
       );
 
-      await expectLeftTagAsync(
+      await expectFailureTag(
         kit.completeBooking(createBookingRequest(), 'cash'),
         'PaymentError'
       );
@@ -394,11 +393,11 @@ describe('Wizard Adapter + Pipeline Integration', () => {
         Effect.fail(Errors.acuity('BOOKING_FAILED', 'Wizard could not complete booking'))
       );
 
-      const error = await expectLeftAsync(
+      const error = await expectFailure(
         kit.completeBooking(createBookingRequest(), 'cash')
       );
 
-      // Payment was captured but booking failed → must refund
+      // Payment was captured but booking failed -> must refund
       expect(cashAdapter.refund).toHaveBeenCalledWith(
         expect.objectContaining({
           transactionId: expect.stringContaining('txn_test'),
@@ -413,7 +412,7 @@ describe('Wizard Adapter + Pipeline Integration', () => {
         Effect.fail(Errors.acuity('BOOKING_FAILED', 'Wizard timed out'))
       );
 
-      await expectLeftAsync(
+      await expectFailure(
         kit.completeBooking(createBookingRequest(), 'venmo')
       );
 
@@ -428,7 +427,7 @@ describe('Wizard Adapter + Pipeline Integration', () => {
   describe('cancel pipeline (wizard limitations)', () => {
     it('fails to cancel because wizard adapter does not support getBooking', async () => {
       // Wizard adapter returns NOT_IMPLEMENTED for getBooking
-      const error = await expectLeftTagAsync(
+      const error = await expectFailureTag(
         kit.cancelBooking({ bookingId: '12345', reason: 'Test' }),
         'AcuityError'
       );
@@ -453,7 +452,7 @@ describe('Wizard Adapter + Pipeline Integration', () => {
         },
       });
 
-      const error = await expectLeftTagAsync(
+      const error = await expectFailureTag(
         kit.completeBooking(badRequest, 'cash'),
         'ValidationError'
       );
@@ -464,7 +463,7 @@ describe('Wizard Adapter + Pipeline Integration', () => {
     it('rejects empty service ID through pipeline validation', async () => {
       const badRequest = createBookingRequest({ serviceId: '' });
 
-      const error = await expectLeftTagAsync(
+      const error = await expectFailureTag(
         kit.completeBooking(badRequest, 'cash'),
         'ValidationError'
       );
@@ -475,7 +474,7 @@ describe('Wizard Adapter + Pipeline Integration', () => {
     it('rejects missing idempotency key through pipeline validation', async () => {
       const badRequest = createBookingRequest({ idempotencyKey: '' });
 
-      const error = await expectLeftTagAsync(
+      const error = await expectFailureTag(
         kit.completeBooking(badRequest, 'cash'),
         'ValidationError'
       );

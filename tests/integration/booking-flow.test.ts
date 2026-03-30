@@ -4,8 +4,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach, vi } from 'vitest';
-import * as E from 'fp-ts/Either';
-import * as TE from 'fp-ts/TaskEither';
+import { Effect, Exit, Cause, Option } from 'effect';
 import { createAcuityAdapter } from '../../src/adapters/acuity.js';
 import { createManualPaymentAdapter } from '../../src/payments/manual.js';
 import {
@@ -22,10 +21,10 @@ import {
   getAcuityMockState,
 } from '../../src/tests/mocks/handlers/index.js';
 import {
-  expectRightAsync,
-  expectLeftAsync,
-  expectLeftTagAsync,
-} from '../../src/tests/helpers/fp-ts.js';
+  expectSuccess,
+  expectFailure,
+  expectFailureTag,
+} from '../../src/tests/helpers/effect.js';
 import { createClient, createBookingRequest } from '../../src/tests/helpers/factories.js';
 
 // MSW server lifecycle
@@ -73,7 +72,7 @@ describe('Complete Booking Flow: Happy Path', () => {
 
   it('completes full booking with cash payment', async () => {
     // Use pre-defined booking request with UTC datetime format
-    const result = await expectRightAsync(
+    const result = await expectSuccess(
       kit.completeBooking(
         createBookingRequest({
           client: createClient({
@@ -96,7 +95,7 @@ describe('Complete Booking Flow: Happy Path', () => {
   });
 
   it('completes booking with Venmo payment', async () => {
-    const result = await expectRightAsync(
+    const result = await expectSuccess(
       kit.completeBooking(
         createBookingRequest({
           client: createClient({
@@ -116,7 +115,7 @@ describe('Complete Booking Flow: Happy Path', () => {
   });
 
   it('includes payment reference in booking notes', async () => {
-    const result = await expectRightAsync(
+    const result = await expectSuccess(
       kit.completeBooking(
         createBookingRequest({
           idempotencyKey: 'payment-ref-test',
@@ -151,7 +150,7 @@ describe('Complete Booking Flow: Error Recovery', () => {
   });
 
   it('fails with invalid payment method', async () => {
-    const error = await expectLeftTagAsync(
+    const error = await expectFailureTag(
       kit.completeBooking(
         createBookingRequest({ idempotencyKey: 'invalid-payment-key' }),
         'bitcoin' // Not a valid payment method
@@ -166,7 +165,7 @@ describe('Complete Booking Flow: Error Recovery', () => {
   });
 
   it('fails with validation error for invalid email', async () => {
-    const error = await expectLeftTagAsync(
+    const error = await expectFailureTag(
       kit.completeBooking(
         createBookingRequest({
           client: createClient({ email: 'not-an-email' }),
@@ -184,7 +183,7 @@ describe('Complete Booking Flow: Error Recovery', () => {
     // Configure mock to report slot as unavailable
     configureAcuityMock({ simulateSlotTaken: true });
 
-    const error = await expectLeftTagAsync(
+    const error = await expectFailureTag(
       kit.completeBooking(
         createBookingRequest({ idempotencyKey: 'slot-taken-key' }),
         'cash'
@@ -203,15 +202,21 @@ describe('Complete Booking Flow: Error Recovery', () => {
     configureAcuityMock({ failOnBookingCreate: true });
 
     // This should fail but cleanup (release reservation) should still happen
-    const result = await kit.completeBooking(
-      createBookingRequest({ idempotencyKey: 'api-failure-key' }),
-      'cash'
-    )();
+    const exit = await Effect.runPromiseExit(
+      kit.completeBooking(
+        createBookingRequest({ idempotencyKey: 'api-failure-key' }),
+        'cash'
+      )
+    );
 
-    // Should be a Left with AcuityError
-    expect(E.isLeft(result)).toBe(true);
-    if (E.isLeft(result)) {
-      expect(result.left._tag).toBe('AcuityError');
+    // Should be a failure with AcuityError
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit)) {
+      const failure = Cause.failureOption(exit.cause);
+      expect(Option.isSome(failure)).toBe(true);
+      if (Option.isSome(failure)) {
+        expect(failure.value._tag).toBe('AcuityError');
+      }
     }
   });
 });
@@ -238,7 +243,7 @@ describe('Complete Booking Flow: Cancellation with Refund', () => {
 
   it('cancels booking without refund', async () => {
     // First create a booking
-    const booking = await expectRightAsync(
+    const booking = await expectSuccess(
       kit.completeBooking(
         createBookingRequest({
           idempotencyKey: 'cancel-no-refund-key',
@@ -248,7 +253,7 @@ describe('Complete Booking Flow: Cancellation with Refund', () => {
     );
 
     // Cancel without refund
-    const result = await expectRightAsync(
+    const result = await expectSuccess(
       kit.cancelBooking({
         bookingId: booking.booking.id,
         reason: 'Customer request',
@@ -262,7 +267,7 @@ describe('Complete Booking Flow: Cancellation with Refund', () => {
 
   it('cancels booking with refund', async () => {
     // First create a booking
-    const booking = await expectRightAsync(
+    const booking = await expectSuccess(
       kit.completeBooking(
         createBookingRequest({
           idempotencyKey: 'cancel-with-refund-key',
@@ -272,7 +277,7 @@ describe('Complete Booking Flow: Cancellation with Refund', () => {
     );
 
     // Cancel with refund
-    const result = await expectRightAsync(
+    const result = await expectSuccess(
       kit.cancelBooking({
         bookingId: booking.booking.id,
         reason: 'Service cancelled',
@@ -286,7 +291,7 @@ describe('Complete Booking Flow: Cancellation with Refund', () => {
   });
 
   it('handles cancellation of nonexistent booking', async () => {
-    const error = await expectLeftTagAsync(
+    const error = await expectFailureTag(
       kit.cancelBooking({
         bookingId: 'nonexistent-booking-id',
       }),
@@ -324,39 +329,45 @@ describe('Complete Booking Flow: Concurrent Bookings', () => {
 
   it('handles multiple bookings at different times', async () => {
     const bookingPromises = [
-      kit.completeBooking(
-        createBookingRequest({
-          datetime: '2026-02-15T14:00:00.000Z',
-          client: createClient({ email: 'client1@example.com' }),
-          idempotencyKey: 'concurrent-1',
-        }),
-        'cash'
-      )(),
-      kit.completeBooking(
-        createBookingRequest({
-          datetime: '2026-02-15T15:00:00.000Z',
-          client: createClient({ email: 'client2@example.com' }),
-          idempotencyKey: 'concurrent-2',
-        }),
-        'cash'
-      )(),
-      kit.completeBooking(
-        createBookingRequest({
-          datetime: '2026-02-15T16:00:00.000Z',
-          client: createClient({ email: 'client3@example.com' }),
-          idempotencyKey: 'concurrent-3',
-        }),
-        'cash'
-      )(),
+      Effect.runPromiseExit(
+        kit.completeBooking(
+          createBookingRequest({
+            datetime: '2026-02-15T14:00:00.000Z',
+            client: createClient({ email: 'client1@example.com' }),
+            idempotencyKey: 'concurrent-1',
+          }),
+          'cash'
+        )
+      ),
+      Effect.runPromiseExit(
+        kit.completeBooking(
+          createBookingRequest({
+            datetime: '2026-02-15T15:00:00.000Z',
+            client: createClient({ email: 'client2@example.com' }),
+            idempotencyKey: 'concurrent-2',
+          }),
+          'cash'
+        )
+      ),
+      Effect.runPromiseExit(
+        kit.completeBooking(
+          createBookingRequest({
+            datetime: '2026-02-15T16:00:00.000Z',
+            client: createClient({ email: 'client3@example.com' }),
+            idempotencyKey: 'concurrent-3',
+          }),
+          'cash'
+        )
+      ),
     ];
 
     const results = await Promise.all(bookingPromises);
 
     // All bookings should succeed (different times)
-    results.forEach((result, i) => {
-      expect(E.isRight(result)).toBe(true);
-      if (E.isRight(result)) {
-        expect(result.right.booking.id).toBeDefined();
+    results.forEach((exit, i) => {
+      expect(Exit.isSuccess(exit)).toBe(true);
+      if (Exit.isSuccess(exit)) {
+        expect(exit.value.booking.id).toBeDefined();
       }
     });
 
@@ -393,7 +404,7 @@ describe('Complete Booking Flow: Idempotency', () => {
       idempotencyKey: 'idempotent-key-12345',
     });
 
-    const result = await expectRightAsync(
+    const result = await expectSuccess(
       kit.completeBooking(request, 'cash')
     );
 

@@ -4,12 +4,12 @@
  */
 
 import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest';
-
+import { Effect } from 'effect';
 import { createStripeAdapter } from '../../../payments/stripe.js';
 import type { PaymentAdapter } from '../../../payments/types.js';
 import { server } from '../../mocks/server.js';
 import { resetStripeMockState, configureStripeMock } from '../../mocks/handlers/index.js';
-import { expectRightAsync, expectLeftTagAsync } from '../../helpers/effect.js';
+import { expectSuccess, expectFailureTag } from '../../helpers/effect.js';
 
 // MSW server lifecycle
 beforeAll(() => {
@@ -39,7 +39,7 @@ describe('Stripe Adapter', () => {
 
   describe('isAvailable', () => {
     it('returns true when secret key is set', async () => {
-      const result = await expectRightAsync(adapter.isAvailable());
+      const result = await expectSuccess(adapter.isAvailable());
       expect(result).toBe(true);
     });
 
@@ -50,14 +50,14 @@ describe('Stripe Adapter', () => {
         publishableKey: '',
         webhookSecret: '',
       });
-      const result = await expectRightAsync(emptyAdapter.isAvailable());
+      const result = await expectSuccess(emptyAdapter.isAvailable());
       expect(result).toBe(false);
     });
   });
 
   describe('createIntent', () => {
     it('creates a payment intent successfully', async () => {
-      const intent = await expectRightAsync(
+      const intent = await expectSuccess(
         adapter.createIntent({
           amount: 15000,
           currency: 'USD',
@@ -76,7 +76,7 @@ describe('Stripe Adapter', () => {
     });
 
     it('includes metadata in intent', async () => {
-      const intent = await expectRightAsync(
+      const intent = await expectSuccess(
         adapter.createIntent({
           amount: 20000,
           currency: 'USD',
@@ -93,7 +93,7 @@ describe('Stripe Adapter', () => {
     it('handles API errors gracefully', async () => {
       configureStripeMock({ failNextRequest: true });
 
-      const error = await expectLeftTagAsync(
+      const error = await expectFailureTag(
         adapter.createIntent({
           amount: 15000,
           currency: 'USD',
@@ -115,7 +115,7 @@ describe('Stripe Adapter', () => {
   describe('capturePayment', () => {
     it('captures (retrieves) a succeeded payment intent', async () => {
       // First create an intent
-      const intent = await expectRightAsync(
+      const intent = await expectSuccess(
         adapter.createIntent({
           amount: 15000,
           currency: 'USD',
@@ -125,7 +125,7 @@ describe('Stripe Adapter', () => {
       );
 
       // Then capture (GET retrieves the auto-captured intent)
-      const result = await expectRightAsync(adapter.capturePayment(intent.id));
+      const result = await expectSuccess(adapter.capturePayment(intent.id));
 
       expect(result.success).toBe(true);
       expect(result.transactionId).toBeDefined();
@@ -137,7 +137,7 @@ describe('Stripe Adapter', () => {
 
     it('handles capture failure', async () => {
       // Create an intent first so a valid ID exists
-      const intent = await expectRightAsync(
+      const intent = await expectSuccess(
         adapter.createIntent({
           amount: 10000,
           currency: 'USD',
@@ -148,7 +148,7 @@ describe('Stripe Adapter', () => {
 
       configureStripeMock({ simulateCaptureFailure: true });
 
-      const error = await expectLeftTagAsync(
+      const error = await expectFailureTag(
         adapter.capturePayment(intent.id),
         'PaymentError'
       );
@@ -163,7 +163,7 @@ describe('Stripe Adapter', () => {
 
   describe('cancelIntent', () => {
     it('cancels a payment intent', async () => {
-      const intent = await expectRightAsync(
+      const intent = await expectSuccess(
         adapter.createIntent({
           amount: 10000,
           currency: 'USD',
@@ -172,13 +172,13 @@ describe('Stripe Adapter', () => {
         })
       );
 
-      await expectRightAsync(adapter.cancelIntent(intent.id));
+      await Effect.runPromise(adapter.cancelIntent(intent.id));
     });
   });
 
   describe('refund', () => {
     it('processes a full refund successfully', async () => {
-      const intent = await expectRightAsync(
+      const intent = await expectSuccess(
         adapter.createIntent({
           amount: 20000,
           currency: 'USD',
@@ -187,7 +187,7 @@ describe('Stripe Adapter', () => {
         })
       );
 
-      const refund = await expectRightAsync(
+      const refund = await expectSuccess(
         adapter.refund({
           transactionId: intent.id,
           reason: 'Customer requested cancellation',
@@ -203,7 +203,7 @@ describe('Stripe Adapter', () => {
     });
 
     it('processes a partial refund', async () => {
-      const intent = await expectRightAsync(
+      const intent = await expectSuccess(
         adapter.createIntent({
           amount: 20000,
           currency: 'USD',
@@ -212,7 +212,7 @@ describe('Stripe Adapter', () => {
         })
       );
 
-      const refund = await expectRightAsync(
+      const refund = await expectSuccess(
         adapter.refund({
           transactionId: intent.id,
           amount: 10000,
@@ -227,7 +227,7 @@ describe('Stripe Adapter', () => {
     it('handles refund failure', async () => {
       configureStripeMock({ simulateRefundFailure: true });
 
-      const error = await expectLeftTagAsync(
+      const error = await expectFailureTag(
         adapter.refund({
           transactionId: 'pi_mock_fail',
           reason: 'Test failure',
@@ -283,7 +283,7 @@ describe('Stripe Adapter', () => {
         },
       });
 
-      const event = await expectRightAsync(adapter.parseWebhook(payload));
+      const event = await expectSuccess(adapter.parseWebhook(payload));
 
       expect(event.type).toBe('payment.completed');
       expect(event.transactionId).toBe('pi_test_success');
@@ -305,7 +305,7 @@ describe('Stripe Adapter', () => {
         },
       });
 
-      const event = await expectRightAsync(adapter.parseWebhook(payload));
+      const event = await expectSuccess(adapter.parseWebhook(payload));
       expect(event.type).toBe('payment.failed');
       expect(event.transactionId).toBe('pi_test_failed');
     });
@@ -323,7 +323,7 @@ describe('Stripe Adapter', () => {
         },
       });
 
-      const event = await expectRightAsync(adapter.parseWebhook(payload));
+      const event = await expectSuccess(adapter.parseWebhook(payload));
       expect(event.type).toBe('payment.cancelled');
     });
 
@@ -341,7 +341,7 @@ describe('Stripe Adapter', () => {
         },
       });
 
-      const event = await expectRightAsync(adapter.parseWebhook(payload));
+      const event = await expectSuccess(adapter.parseWebhook(payload));
       expect(event.type).toBe('refund.completed');
       expect(event.intentId).toBe('pi_test_original');
     });
@@ -359,12 +359,12 @@ describe('Stripe Adapter', () => {
         },
       });
 
-      const event = await expectRightAsync(adapter.parseWebhook(payload));
+      const event = await expectSuccess(adapter.parseWebhook(payload));
       expect(event.type).toBe('payment.failed');
     });
 
     it('handles invalid JSON payload', async () => {
-      const error = await expectLeftTagAsync(
+      const error = await expectFailureTag(
         adapter.parseWebhook('invalid json'),
         'PaymentError'
       );
