@@ -78,13 +78,13 @@
 
           <div class="flex-1">
             <p class="font-medium text-surface-900-100">Any Available</p>
-            <p class="text-sm text-surface-500">
+            <p class="text-sm text-surface-600-400">
               Book with the first available provider
             </p>
           </div>
 
           {#if anySelected && !selectedProvider}
-            <span class="text-primary-500">✓</span>
+            <span class="text-primary-600-400">✓</span>
           {/if}
         </button>
       {/if}
@@ -117,20 +117,20 @@
           <div class="flex-1">
             <p class="font-medium text-surface-900-100">{provider.name}</p>
             {#if provider.description}
-              <p class="text-sm text-surface-500 line-clamp-2">
+              <p class="text-sm text-surface-600-400 line-clamp-2">
                 {provider.description}
               </p>
             {/if}
           </div>
 
           {#if selectedProvider?.id === provider.id}
-            <span class="text-primary-500">✓</span>
+            <span class="text-primary-600-400">✓</span>
           {/if}
         </button>
       {/each}
 
       {#if providers.length === 0 && !allowAny}
-        <p class="text-surface-500 text-center py-4">No providers available.</p>
+        <p class="text-surface-600-400 text-center py-4">No providers available.</p>
       {/if}
     </div>
   {/if}

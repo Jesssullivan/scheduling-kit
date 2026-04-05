@@ -253,7 +253,7 @@
 <div class="stripe-checkout">
   <!-- Amount Display -->
   <div class="amount-display mb-4 text-center">
-    <p class="text-sm text-surface-500">Amount due</p>
+    <p class="text-sm text-surface-600-400">Amount due</p>
     <p class="text-2xl font-bold text-primary-600-400">{formatPrice(amount)}</p>
   </div>
 
@@ -312,7 +312,7 @@
   {#if disabled}
     <div class="disabled-state text-center py-6">
       <div class="disabled-element bg-surface-200-800 rounded p-4 opacity-50">
-        <p class="text-surface-500">Card Payment</p>
+        <p class="text-surface-600-400">Card Payment</p>
       </div>
       <p class="text-xs text-surface-400-600 mt-2">Complete the form to enable payment</p>
     </div>

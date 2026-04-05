@@ -405,19 +405,19 @@
 
             <div class="space-y-2 text-sm">
               <div class="flex justify-between">
-                <span class="text-surface-500">Service</span>
+                <span class="text-surface-600-400">Service</span>
                 <span>{store.service?.name}</span>
               </div>
 
               {#if store.provider}
                 <div class="flex justify-between">
-                  <span class="text-surface-500">Provider</span>
+                  <span class="text-surface-600-400">Provider</span>
                   <span>{store.provider.name}</span>
                 </div>
               {/if}
 
               <div class="flex justify-between">
-                <span class="text-surface-500">Date & Time</span>
+                <span class="text-surface-600-400">Date & Time</span>
                 <span>
                   {store.datetime ? new Date(store.datetime).toLocaleDateString('en-US', {
                     weekday: 'short',
@@ -430,12 +430,12 @@
               </div>
 
               <div class="flex justify-between">
-                <span class="text-surface-500">Client</span>
+                <span class="text-surface-600-400">Client</span>
                 <span>{store.client?.firstName} {store.client?.lastName}</span>
               </div>
 
               <div class="flex justify-between">
-                <span class="text-surface-500">Payment</span>
+                <span class="text-surface-600-400">Payment</span>
                 <span>{paymentMethods.find(m => m.id === store.paymentMethod)?.displayName}</span>
               </div>
 
@@ -464,7 +464,7 @@
             {/if}
           </button>
 
-          <p class="text-xs text-surface-500 text-center mt-4">
+          <p class="text-xs text-surface-600-400 text-center mt-4">
             By confirming, you agree to our cancellation policy.
           </p>
         </div>
@@ -483,7 +483,7 @@
             <span class="text-2xl">❌</span>
           </div>
           <h3 class="text-lg font-semibold mb-2">Booking Failed</h3>
-          <p class="text-surface-500 mb-6">{errorMessage || 'An error occurred during booking.'}</p>
+          <p class="text-surface-600-400 mb-6">{errorMessage || 'An error occurred during booking.'}</p>
           <button
             type="button"
             class="btn preset-filled-primary-500"

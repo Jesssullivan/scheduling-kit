@@ -1,6 +1,6 @@
 {
   "name": "@tummycrypt/scheduling-kit",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Backend-agnostic scheduling components with alternative payment support",
   "type": "module",
   "exports": {

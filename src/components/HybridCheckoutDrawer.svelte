@@ -573,7 +573,7 @@
               <div class="flex justify-between items-center">
                 <div>
                   <p class="font-medium">{selectedService.name}</p>
-                  <p class="text-sm text-surface-500">{selectedService.duration} min</p>
+                  <p class="text-sm text-surface-600-400">{selectedService.duration} min</p>
                 </div>
                 <p class="text-xl font-bold text-primary-600-400">
                   {formatPrice(selectedService.price)}
@@ -595,7 +595,7 @@
                 <span class="text-2xl">{option.icon}</span>
                 <div class="flex-1">
                   <p class="font-medium">{option.name}</p>
-                  <p class="text-sm text-surface-500">{option.description}</p>
+                  <p class="text-sm text-surface-600-400">{option.description}</p>
                 </div>
                 <span class="text-surface-400-600">→</span>
               </button>
@@ -610,7 +610,7 @@
               <div class="flex justify-between items-center">
                 <div>
                   <p class="font-medium">{selectedService.name}</p>
-                  <p class="text-sm text-surface-500">{selectedService.duration} min</p>
+                  <p class="text-sm text-surface-600-400">{selectedService.duration} min</p>
                 </div>
                 <p class="text-xl font-bold text-primary-600-400">
                   {formatPrice(selectedService.price)}
@@ -651,7 +651,7 @@
               <div class="flex justify-between items-center">
                 <div>
                   <p class="font-medium">{selectedService.name}</p>
-                  <p class="text-sm text-surface-500">{selectedService.duration} min</p>
+                  <p class="text-sm text-surface-600-400">{selectedService.duration} min</p>
                 </div>
                 <p class="text-xl font-bold text-primary-600-400">
                   {formatPrice(selectedService.price)}
@@ -676,7 +676,7 @@
       {:else if step === 'processing'}
         <div class="processing-step text-center py-12">
           <span class="spinner-large"></span>
-          <p class="mt-4 text-surface-500">Processing your booking...</p>
+          <p class="mt-4 text-surface-600-400">Processing your booking...</p>
         </div>
 
       {:else if step === 'complete'}
@@ -726,7 +726,7 @@
             <span class="text-2xl">✕</span>
           </div>
           <h3 class="text-lg font-semibold mb-2">Something Went Wrong</h3>
-          <p class="text-surface-500 mb-6">{errorMessage || 'An error occurred.'}</p>
+          <p class="text-surface-600-400 mb-6">{errorMessage || 'An error occurred.'}</p>
           <button type="button" class="btn preset-filled-primary-500" onclick={handleBack}>
             Try Again
           </button>
