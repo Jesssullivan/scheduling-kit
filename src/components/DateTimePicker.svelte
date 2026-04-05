@@ -163,7 +163,7 @@
         <!-- Weekday headers -->
         <div class="weekday-headers grid grid-cols-7 gap-1 mb-2">
           {#each weekdays as day}
-            <div class="text-center text-sm font-medium text-surface-500">{day}</div>
+            <div class="text-center text-sm font-medium text-surface-600-400">{day}</div>
           {/each}
         </div>
 
@@ -216,7 +216,7 @@
           {/each}
         </div>
       {:else if availableSlots.length === 0}
-        <p class="text-surface-500">No available times for this date.</p>
+        <p class="text-surface-600-400">No available times for this date.</p>
       {:else}
         <div class="slots-grid flex flex-wrap gap-2">
           {#each availableSlots as slot (slot.datetime)}

@@ -61,7 +61,7 @@
 
 <div class="payment-selector">
   <div class="amount-display text-center mb-6">
-    <p class="text-sm text-surface-500">Amount Due</p>
+    <p class="text-sm text-surface-600-400">Amount Due</p>
     <p class="text-3xl font-bold text-primary-600-400">
       {formatPrice(amount, currency)}
     </p>
@@ -76,7 +76,7 @@
       {/each}
     </div>
   {:else if methods.length === 0}
-    <p class="text-surface-500 text-center py-4">No payment methods available.</p>
+    <p class="text-surface-600-400 text-center py-4">No payment methods available.</p>
   {:else}
     <div class="methods space-y-3">
       {#each methods as method (method.id)}
@@ -97,12 +97,12 @@
           <div class="flex-1">
             <p class="font-medium text-surface-900-100">{method.displayName}</p>
             {#if method.description}
-              <p class="text-sm text-surface-500">{method.description}</p>
+              <p class="text-sm text-surface-600-400">{method.description}</p>
             {/if}
           </div>
 
           {#if method.processingFee || method.processingFeePercent}
-            <div class="text-sm text-surface-500">
+            <div class="text-sm text-surface-600-400">
               {#if method.processingFee}
                 +{formatPrice(method.processingFee, currency)}
               {:else if method.processingFeePercent}
@@ -112,7 +112,7 @@
           {/if}
 
           {#if selectedMethod === method.id}
-            <span class="text-primary-500">✓</span>
+            <span class="text-primary-600-400">✓</span>
           {/if}
         </button>
       {/each}

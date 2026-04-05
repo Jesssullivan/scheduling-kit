@@ -75,7 +75,7 @@
       <p>{error}</p>
     </div>
   {:else if services.length === 0}
-    <div class="empty text-surface-500 text-center py-8">
+    <div class="empty text-surface-600-400 text-center py-8">
       <p>No services available</p>
     </div>
   {:else}
@@ -110,7 +110,7 @@
                   <div class="font-semibold text-primary-600-400">
                     {formatPrice(service.price, service.currency)}
                   </div>
-                  <div class="text-sm text-surface-500">
+                  <div class="text-sm text-surface-600-400">
                     {formatDuration(service.duration)}
                   </div>
                 </div>

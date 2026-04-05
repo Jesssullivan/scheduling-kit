@@ -148,7 +148,7 @@
     <!-- First Name -->
     <div class="field">
       <label for="firstName" class="block text-sm font-medium mb-1">
-        First Name <span class="text-error-500">*</span>
+        First Name <span class="text-error-600-400">*</span>
       </label>
       <input
         type="text"
@@ -160,14 +160,14 @@
         disabled={loading}
       />
       {#if hasError('firstName')}
-        <p class="text-sm text-error-500 mt-1">{errors.firstName}</p>
+        <p class="text-sm text-error-600-400 mt-1">{errors.firstName}</p>
       {/if}
     </div>
 
     <!-- Last Name -->
     <div class="field">
       <label for="lastName" class="block text-sm font-medium mb-1">
-        Last Name <span class="text-error-500">*</span>
+        Last Name <span class="text-error-600-400">*</span>
       </label>
       <input
         type="text"
@@ -179,14 +179,14 @@
         disabled={loading}
       />
       {#if hasError('lastName')}
-        <p class="text-sm text-error-500 mt-1">{errors.lastName}</p>
+        <p class="text-sm text-error-600-400 mt-1">{errors.lastName}</p>
       {/if}
     </div>
 
     <!-- Email -->
     <div class="field sm:col-span-2">
       <label for="email" class="block text-sm font-medium mb-1">
-        Email <span class="text-error-500">*</span>
+        Email <span class="text-error-600-400">*</span>
       </label>
       <input
         type="email"
@@ -198,7 +198,7 @@
         disabled={loading}
       />
       {#if hasError('email')}
-        <p class="text-sm text-error-500 mt-1">{errors.email}</p>
+        <p class="text-sm text-error-600-400 mt-1">{errors.email}</p>
       {/if}
     </div>
 
@@ -242,7 +242,7 @@
       <!-- Radio: Jaw pain -->
       <fieldset class="field">
         <legend class="block text-sm font-medium mb-2">
-          Do you experience jaw pain or TMD symptoms? <span class="text-error-500">*</span>
+          Do you experience jaw pain or TMD symptoms? <span class="text-error-600-400">*</span>
         </legend>
         <div class="flex gap-4">
           <label class="flex items-center gap-2 cursor-pointer">
@@ -255,14 +255,14 @@
           </label>
         </div>
         {#if hasError('painRadio')}
-          <p class="text-sm text-error-500 mt-1">{errors.painRadio}</p>
+          <p class="text-sm text-error-600-400 mt-1">{errors.painRadio}</p>
         {/if}
       </fieldset>
 
       <!-- Radio: Clenching -->
       <fieldset class="field">
         <legend class="block text-sm font-medium mb-2">
-          Do you clench or grind your teeth? <span class="text-error-500">*</span>
+          Do you clench or grind your teeth? <span class="text-error-600-400">*</span>
         </legend>
         <div class="flex gap-4">
           <label class="flex items-center gap-2 cursor-pointer">
@@ -275,14 +275,14 @@
           </label>
         </div>
         {#if hasError('clenching')}
-          <p class="text-sm text-error-500 mt-1">{errors.clenching}</p>
+          <p class="text-sm text-error-600-400 mt-1">{errors.clenching}</p>
         {/if}
       </fieldset>
 
       <!-- Radio: Headaches -->
       <fieldset class="field">
         <legend class="block text-sm font-medium mb-2">
-          Do you experience frequent headaches? <span class="text-error-500">*</span>
+          Do you experience frequent headaches? <span class="text-error-600-400">*</span>
         </legend>
         <div class="flex gap-4">
           <label class="flex items-center gap-2 cursor-pointer">
@@ -295,14 +295,14 @@
           </label>
         </div>
         {#if hasError('headaches')}
-          <p class="text-sm text-error-500 mt-1">{errors.headaches}</p>
+          <p class="text-sm text-error-600-400 mt-1">{errors.headaches}</p>
         {/if}
       </fieldset>
 
       <!-- How did you hear -->
       <fieldset class="field">
         <legend class="block text-sm font-medium mb-2">
-          How did you hear about us? <span class="text-error-500">*</span>
+          How did you hear about us? <span class="text-error-600-400">*</span>
           <span class="text-xs text-surface-400-600">(select all that apply)</span>
         </legend>
         <div class="space-y-2">
@@ -326,14 +326,14 @@
           {/each}
         </div>
         {#if hasError('howDidYouHear')}
-          <p class="text-sm text-error-500 mt-1">{errors.howDidYouHear}</p>
+          <p class="text-sm text-error-600-400 mt-1">{errors.howDidYouHear}</p>
         {/if}
       </fieldset>
 
       <!-- Medication -->
       <div class="field">
         <label for="medication" class="block text-sm font-medium mb-1">
-          Current medications <span class="text-error-500">*</span>
+          Current medications <span class="text-error-600-400">*</span>
         </label>
         <textarea
           id="medication"
@@ -344,7 +344,7 @@
           disabled={loading}
         ></textarea>
         {#if hasError('medication')}
-          <p class="text-sm text-error-500 mt-1">{errors.medication}</p>
+          <p class="text-sm text-error-600-400 mt-1">{errors.medication}</p>
         {/if}
       </div>
 
@@ -359,11 +359,11 @@
           />
           <span class="text-sm">
             I acknowledge that the information provided is accurate and I consent to treatment.
-            <span class="text-error-500">*</span>
+            <span class="text-error-600-400">*</span>
           </span>
         </label>
         {#if hasError('termsAccepted')}
-          <p class="text-sm text-error-500 mt-1">{errors.termsAccepted}</p>
+          <p class="text-sm text-error-600-400 mt-1">{errors.termsAccepted}</p>
         {/if}
       </div>
     </div>
@@ -385,7 +385,7 @@
     </button>
   </div>
 
-  <p class="text-xs text-surface-500 mt-4 text-center">
+  <p class="text-xs text-surface-600-400 mt-4 text-center">
     Your information is secure and will only be used to manage your appointment.
   </p>
 </form>

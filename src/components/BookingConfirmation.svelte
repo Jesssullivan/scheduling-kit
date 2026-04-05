@@ -141,7 +141,7 @@ END:VCALENDAR`;
 
   <!-- Confirmation Code -->
   <div class="confirmation-code bg-surface-100-900 rounded-container p-4 mb-6">
-    <p class="text-sm text-surface-500 mb-1">Confirmation Number</p>
+    <p class="text-sm text-surface-600-400 mb-1">Confirmation Number</p>
     <p class="text-2xl font-mono font-bold text-primary-600-400">
       #{booking.confirmationCode}
     </p>
@@ -153,17 +153,17 @@ END:VCALENDAR`;
 
     <div class="space-y-3">
       <div class="flex justify-between">
-        <span class="text-surface-500">Service</span>
+        <span class="text-surface-600-400">Service</span>
         <span class="font-medium text-surface-900-100">{booking.serviceName}</span>
       </div>
 
       <div class="flex justify-between">
-        <span class="text-surface-500">Date</span>
+        <span class="text-surface-600-400">Date</span>
         <span class="font-medium text-surface-900-100">{formatDate(booking.datetime)}</span>
       </div>
 
       <div class="flex justify-between">
-        <span class="text-surface-500">Time</span>
+        <span class="text-surface-600-400">Time</span>
         <span class="font-medium text-surface-900-100">
           {formatTime(booking.datetime)} - {formatTime(booking.endTime)}
         </span>
@@ -171,7 +171,7 @@ END:VCALENDAR`;
 
       {#if booking.providerName}
         <div class="flex justify-between">
-          <span class="text-surface-500">Provider</span>
+          <span class="text-surface-600-400">Provider</span>
           <span class="font-medium text-surface-900-100">{booking.providerName}</span>
         </div>
       {/if}
@@ -179,7 +179,7 @@ END:VCALENDAR`;
       <hr class="border-surface-200-800" />
 
       <div class="flex justify-between">
-        <span class="text-surface-500">Total</span>
+        <span class="text-surface-600-400">Total</span>
         <span class="font-bold text-lg text-surface-900-100">
           {formatPrice(booking.price, booking.currency)}
         </span>
@@ -187,7 +187,7 @@ END:VCALENDAR`;
 
       {#if payment}
         <div class="flex justify-between text-sm">
-          <span class="text-surface-500">Payment</span>
+          <span class="text-surface-600-400">Payment</span>
           <span class="text-success-600-400">
             Paid via {payment.processor}
           </span>

@@ -108,7 +108,7 @@
     <div class="loading-overlay absolute inset-0 flex items-center justify-center bg-surface-50-950/80 z-10">
       <div class="loading-spinner">
         <span class="spinner"></span>
-        <p class="mt-2 text-sm text-surface-500">Loading booking form...</p>
+        <p class="mt-2 text-sm text-surface-600-400">Loading booking form...</p>
       </div>
     </div>
   {/if}
@@ -136,9 +136,9 @@
   </div>
 
   <!-- Help text -->
-  <p class="help-text text-xs text-surface-500 text-center mt-4">
-    Having trouble? <a href="tel:{supportPhone}" class="text-primary-500 underline">Call us</a> or
-    <a href="mailto:{supportEmail}" class="text-primary-500 underline">send an email</a>.
+  <p class="help-text text-xs text-surface-600-400 text-center mt-4">
+    Having trouble? <a href="tel:{supportPhone}" class="text-primary-600-400 underline">Call us</a> or
+    <a href="mailto:{supportEmail}" class="text-primary-600-400 underline">send an email</a>.
   </p>
 </div>
 

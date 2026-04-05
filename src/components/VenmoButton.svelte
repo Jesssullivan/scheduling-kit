@@ -224,7 +224,7 @@
   ></div>
 
   {#if disabled}
-    <div class="disabled-message text-surface-500 text-sm text-center p-4">
+    <div class="disabled-message text-surface-600-400 text-sm text-center p-4">
       Please complete the form above to enable payment.
     </div>
   {/if}
