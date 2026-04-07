@@ -1,47 +1,256 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library")
+"""
+BUILD.bazel for @tummycrypt/scheduling-kit.
+
+Dual-mode build: works with both pnpm (standalone) and Bazel (CI/production).
+  Standalone: pnpm build            (svelte-kit sync && svelte-package)
+  Bazel:      bazel build //:pkg    (hermetic, cacheable)
+
+Subpackage structure:
+  //src/core         - SchedulingAdapter interface, types, Effect wrappers
+  //src/adapters     - HomegrownAdapter (PostgreSQL/Drizzle)
+  //src/payments     - Stripe, Venmo/PayPal, manual payment adapters
+  //src/components   - 12 Svelte checkout UI components
+  //src/stores       - Svelte stores (checkout state)
+  //src/lib          - Utilities (URL builder, Acuity listener)
+  //src/reconciliation - Alt-payment matching
+  //src/testing      - Mock helpers, MSW handlers
+"""
+
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
 load("@aspect_rules_js//npm:defs.bzl", "npm_package")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
 load("@npm//:defs.bzl", "npm_link_all_packages")
+load("@npm//:vitest/package_json.bzl", vitest_bin = "bin")
+
+# =============================================================================
+# npm link - makes node_modules available
+# =============================================================================
 
 npm_link_all_packages(name = "node_modules")
 
-ts_project(
-    name = "scheduling-kit_ts",
+# =============================================================================
+# Svelte package build
+#
+# Uses svelte-package to compile all src/ to dist/. This handles .svelte
+# components, .svelte.ts stores, and plain .ts files in one pass.
+# =============================================================================
+
+js_run_binary(
+    name = "scheduling_kit_build",
+    tags = ["manual"],
+    tool = ":node_modules/@sveltejs/package",
     srcs = glob(
-        ["src/**/*.ts"],
+        [
+            "src/**/*.ts",
+            "src/**/*.svelte",
+            "src/**/*.svelte.ts",
+        ],
         exclude = [
             "src/**/*.test.ts",
+            "src/**/*.spec.ts",
             "src/tests/**",
         ],
-    ),
-    declaration = True,
-    resolve_json_module = True,
-    tsconfig = "tsconfig.json",
-    deps = [
-        ":node_modules/effect",
-        ":node_modules/fp-ts",
-        ":node_modules/zod",
+    ) + [
+        "package.json",
+        "svelte.config.js",
+        "tsconfig.json",
+        ":node_modules",
     ],
+    args = [
+        "-i",
+        "src",
+        "-o",
+        "dist",
+    ],
+    out_dirs = ["dist"],
+    visibility = ["//visibility:public"],
 )
 
 js_library(
-    name = "scheduling-kit",
-    srcs = [
-        "package.json",
-        ":scheduling-kit_ts",
-    ] + glob(["src/**/*.svelte"]),
+    name = "scheduling_kit",
+    srcs = [":scheduling_kit_build"],
+    tags = ["manual"],
     visibility = ["//visibility:public"],
 )
+
+# =============================================================================
+# npm package - publishable artifact
+# =============================================================================
 
 npm_package(
     name = "pkg",
     srcs = [
         "package.json",
-        "LICENSE",
         "README.md",
-        ":scheduling-kit",
+        "LICENSE",
+        ":scheduling_kit",
     ],
     package = "@tummycrypt/scheduling-kit",
-    version = "0.1.0",
+    tags = ["manual"],
+    version = "0.5.0",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# TypeScript subpackage targets (finer-grained build caching)
+#
+# These compile individual subpackages independently for:
+#   - Incremental builds (only recompile what changed)
+#   - Dependency validation (enforce clean boundaries)
+#   - Parallel compilation
+# =============================================================================
+
+ts_project(
+    name = "core",
+    srcs = glob(["src/core/**/*.ts"], exclude = ["src/core/**/*.test.ts"]),
+    declaration = True,
+    tsconfig = ":tsconfig.json",
+    transpiler = "tsc",
+    validate = False,
+    deps = [
+        ":node_modules",
+        ":node_modules/effect",
+        ":node_modules/zod",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+ts_project(
+    name = "adapters",
+    srcs = glob(["src/adapters/**/*.ts"], exclude = ["src/adapters/**/*.test.ts"]),
+    declaration = True,
+    tsconfig = ":tsconfig.json",
+    transpiler = "tsc",
+    validate = False,
+    deps = [
+        ":core",
+        ":node_modules",
+        ":node_modules/effect",
+        ":node_modules/drizzle-orm",
+        ":node_modules/@tummycrypt/tinyland-auth-pg",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+ts_project(
+    name = "payments",
+    srcs = glob(["src/payments/**/*.ts"], exclude = ["src/payments/**/*.test.ts"]),
+    declaration = True,
+    tsconfig = ":tsconfig.json",
+    transpiler = "tsc",
+    validate = False,
+    deps = [
+        ":core",
+        ":node_modules",
+        ":node_modules/effect",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+ts_project(
+    name = "reconciliation",
+    srcs = glob(["src/reconciliation/**/*.ts"], exclude = ["src/reconciliation/**/*.test.ts"]),
+    declaration = True,
+    tsconfig = ":tsconfig.json",
+    transpiler = "tsc",
+    validate = False,
+    deps = [
+        ":core",
+        ":node_modules",
+        ":node_modules/effect",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+ts_project(
+    name = "lib",
+    srcs = glob(["src/lib/**/*.ts"], exclude = ["src/lib/**/*.test.ts"]),
+    declaration = True,
+    tsconfig = ":tsconfig.json",
+    transpiler = "tsc",
+    validate = False,
+    deps = [
+        ":core",
+        ":node_modules",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+ts_project(
+    name = "testing_lib",
+    srcs = glob(["src/testing/**/*.ts"], exclude = ["src/testing/**/*.test.ts"]),
+    declaration = True,
+    tsconfig = ":tsconfig.json",
+    transpiler = "tsc",
+    validate = False,
+    deps = [
+        ":core",
+        ":node_modules",
+        ":node_modules/effect",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# Test targets
+# =============================================================================
+
+vitest_bin.vitest_test(
+    name = "test",
+    tags = ["manual"],
+    data = [
+        ":node_modules",
+        "tsconfig.json",
+        ":node_modules/vitest",
+        "vitest.config.ts",
+    ] + glob(["src/**/*.ts"]) + glob(["src/tests/**/*.test.ts"]),
+    args = [
+        "run",
+        "--reporter=verbose",
+        "--config",
+        "$(rootpath vitest.config.ts)",
+    ],
+    log_level = "info",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# Typecheck (svelte-check)
+# =============================================================================
+
+js_run_binary(
+    name = "typecheck",
+    tags = ["manual"],
+    tool = ":node_modules/svelte-check",
+    srcs = glob(
+        [
+            "src/**/*.ts",
+            "src/**/*.svelte",
+            "src/**/*.svelte.ts",
+        ],
+        allow_empty = True,
+    ) + [
+        "tsconfig.json",
+        ":node_modules",
+    ],
+    args = [
+        "--tsconfig",
+        "$(rootpath tsconfig.json)",
+    ],
+    stdout = "typecheck.log",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# Exported files
+# =============================================================================
+
+exports_files(
+    [
+        "package.json",
+        "svelte.config.js",
+        "tsconfig.json",
+        "vitest.config.ts",
+    ],
     visibility = ["//visibility:public"],
 )
