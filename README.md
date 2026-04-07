@@ -102,19 +102,6 @@ const config = {
 const adapter = createAcuityAdapter(config);
 ```
 
-### AcuityScraper
-
-Browser-automation adapter that works without the Acuity API (no Powerhouse plan needed).
-
-```typescript
-import { createScraperAdapter } from '@tummycrypt/scheduling-kit/adapters';
-
-const adapter = createScraperAdapter({
-  ownerId: '12345678',
-  baseUrl: 'https://acuityscheduling.com',
-});
-```
-
 ### CalComAdapter
 
 Stub adapter for future Cal.com integration.

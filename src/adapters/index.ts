@@ -8,18 +8,6 @@ export * from './types.js';
 // Acuity Adapter (API-based, requires Powerhouse plan)
 export { createAcuityAdapter } from './acuity.js';
 
-// Acuity Scraper (no API required)
-export {
-  AcuityScraper,
-  createScraperAdapter,
-  scrapeServicesOnce,
-  scrapeAvailabilityOnce,
-  type ScraperConfig,
-  type ScrapedService,
-  type ScrapedAvailability,
-  type ScrapedTimeSlot,
-} from './acuity-scraper.js';
-
 // Cal.com Adapter (stub for future migration)
 export { createCalComAdapter } from './calcom.js';
 
