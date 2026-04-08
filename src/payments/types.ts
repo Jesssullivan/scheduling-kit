@@ -131,6 +131,8 @@ export interface VenmoAdapterConfig {
   readonly businessProfileId?: string;
   readonly webhookId?: string;
   readonly brandName?: string;
+  /** PayPal email of the payee (practitioner). Routes payments to their account. */
+  readonly payeeEmail?: string;
 }
 
 export interface StripeAdapterConfig {
