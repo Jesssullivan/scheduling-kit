@@ -195,6 +195,7 @@ export const createVenmoAdapter = (config: VenmoAdapterConfig): PaymentAdapter =
                   currency_code: currency,
                   value: (amount / 100).toFixed(2),
                 },
+                ...(config.payeeEmail ? { payee: { email_address: config.payeeEmail } } : {}),
                 custom_id: metadata ? JSON.stringify(metadata) : undefined,
               }],
               payment_source: {
