@@ -45,6 +45,19 @@ export type {
 // Factory
 export { createAdapterFactory, type AdapterFactory } from './factory.js';
 
+// Status helpers
+export {
+	getStripeStatus,
+	getPayPalStatus,
+	getStripeSetupSteps,
+	getPayPalSetupSteps,
+	getOverallProgress,
+	type ProviderStatus,
+	type SetupStep,
+	type StripeState,
+	type PayPalState,
+} from './status.js';
+
 // Stripe
 export { buildStripeAuthorizeUrl, exchangeStripeCode } from './stripe/oauth.js';
 export { getStripeAccountStatus } from './stripe/account.js';

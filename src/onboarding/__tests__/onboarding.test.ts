@@ -11,7 +11,153 @@ import { validateStripeKeys } from '../stripe/configure.js';
 import { getStripeAccountStatus } from '../stripe/account.js';
 import { validatePayPalCredentials } from '../paypal/configure.js';
 import { createAdapterFactory } from '../factory.js';
+import {
+	getStripeStatus,
+	getPayPalStatus,
+	getStripeSetupSteps,
+	getPayPalSetupSteps,
+	getOverallProgress,
+	type StripeState,
+	type PayPalState,
+} from '../status.js';
 import type { CredentialStore } from '../types.js';
+
+// ---------------------------------------------------------------------------
+// Status helpers
+// ---------------------------------------------------------------------------
+
+describe('Provider status', () => {
+	const emptyStripe: StripeState = {
+		platformConfigured: false, accountId: null,
+		chargesEnabled: false, payoutsEnabled: false, detailsSubmitted: false,
+		webhookConfigured: false,
+	};
+
+	it('stripe: not_configured when no platform keys', () => {
+		expect(getStripeStatus(emptyStripe)).toBe('not_configured');
+	});
+
+	it('stripe: incomplete when platform configured but no charges', () => {
+		expect(getStripeStatus({ ...emptyStripe, platformConfigured: true })).toBe('incomplete');
+	});
+
+	it('stripe: incomplete when account exists but not verified', () => {
+		expect(getStripeStatus({ ...emptyStripe, accountId: 'acct_1', detailsSubmitted: true })).toBe('incomplete');
+	});
+
+	it('stripe: connected when charges + payouts enabled', () => {
+		expect(getStripeStatus({
+			...emptyStripe, platformConfigured: true, accountId: 'acct_1',
+			chargesEnabled: true, payoutsEnabled: true, detailsSubmitted: true, webhookConfigured: true,
+		})).toBe('connected');
+	});
+
+	it('paypal: not_configured when no platform keys', () => {
+		expect(getPayPalStatus({ platformConfigured: false, payeeEmail: null })).toBe('not_configured');
+	});
+
+	it('paypal: incomplete when platform configured but no email', () => {
+		expect(getPayPalStatus({ platformConfigured: true, payeeEmail: null })).toBe('incomplete');
+	});
+
+	it('paypal: connected when platform + email', () => {
+		expect(getPayPalStatus({ platformConfigured: true, payeeEmail: 'jen@example.com' })).toBe('connected');
+	});
+});
+
+describe('Setup steps', () => {
+	it('stripe: first step current when nothing configured', () => {
+		const steps = getStripeSetupSteps({
+			platformConfigured: false, accountId: null,
+			chargesEnabled: false, payoutsEnabled: false, detailsSubmitted: false,
+			webhookConfigured: false,
+		});
+		expect(steps[0].current).toBe(true);
+		expect(steps[0].complete).toBe(false);
+		expect(steps[1].current).toBe(false);
+		expect(steps[2].current).toBe(false);
+	});
+
+	it('stripe: second step current after platform configured', () => {
+		const steps = getStripeSetupSteps({
+			platformConfigured: true, accountId: null,
+			chargesEnabled: false, payoutsEnabled: false, detailsSubmitted: false,
+			webhookConfigured: false,
+		});
+		expect(steps[0].complete).toBe(true);
+		expect(steps[1].current).toBe(true);
+	});
+
+	it('stripe: third step current after account linked', () => {
+		const steps = getStripeSetupSteps({
+			platformConfigured: true, accountId: 'acct_1',
+			chargesEnabled: false, payoutsEnabled: false, detailsSubmitted: true,
+			webhookConfigured: false,
+		});
+		expect(steps[0].complete).toBe(true);
+		expect(steps[1].complete).toBe(true);
+		expect(steps[2].current).toBe(true);
+	});
+
+	it('stripe: all complete when fully configured', () => {
+		const steps = getStripeSetupSteps({
+			platformConfigured: true, accountId: 'acct_1',
+			chargesEnabled: true, payoutsEnabled: true, detailsSubmitted: true,
+			webhookConfigured: true,
+		});
+		expect(steps.every(s => s.complete)).toBe(true);
+		expect(steps.every(s => !s.current)).toBe(true);
+	});
+
+	it('paypal: first step current when nothing configured', () => {
+		const steps = getPayPalSetupSteps({ platformConfigured: false, payeeEmail: null });
+		expect(steps[0].current).toBe(true);
+		expect(steps[1].current).toBe(false);
+	});
+
+	it('paypal: second step current after platform configured', () => {
+		const steps = getPayPalSetupSteps({ platformConfigured: true, payeeEmail: null });
+		expect(steps[0].complete).toBe(true);
+		expect(steps[1].current).toBe(true);
+	});
+
+	it('paypal: all complete when connected', () => {
+		const steps = getPayPalSetupSteps({ platformConfigured: true, payeeEmail: 'a@b.com' });
+		expect(steps.every(s => s.complete)).toBe(true);
+	});
+});
+
+describe('Overall progress', () => {
+	it('0 of 5 when nothing configured', () => {
+		const p = getOverallProgress(
+			{ platformConfigured: false, accountId: null, chargesEnabled: false, payoutsEnabled: false, detailsSubmitted: false, webhookConfigured: false },
+			{ platformConfigured: false, payeeEmail: null },
+		);
+		expect(p.complete).toBe(0);
+		expect(p.total).toBe(5);
+	});
+
+	it('5 of 5 when everything configured', () => {
+		const p = getOverallProgress(
+			{ platformConfigured: true, accountId: 'acct_1', chargesEnabled: true, payoutsEnabled: true, detailsSubmitted: true, webhookConfigured: true },
+			{ platformConfigured: true, payeeEmail: 'a@b.com' },
+		);
+		expect(p.complete).toBe(5);
+		expect(p.total).toBe(5);
+	});
+
+	it('partial progress tracked correctly', () => {
+		const p = getOverallProgress(
+			{ platformConfigured: true, accountId: null, chargesEnabled: false, payoutsEnabled: false, detailsSubmitted: false, webhookConfigured: false },
+			{ platformConfigured: true, payeeEmail: 'a@b.com' },
+		);
+		expect(p.complete).toBe(3); // stripe platform + paypal platform + paypal email
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Existing tests
+// ---------------------------------------------------------------------------
 
 describe('Stripe OAuth', () => {
 	it('builds correct authorize URL', () => {
