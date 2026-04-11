@@ -191,6 +191,22 @@ ts_project(
     visibility = ["//visibility:public"],
 )
 
+ts_project(
+    name = "onboarding",
+    srcs = glob(["src/onboarding/**/*.ts"], exclude = ["src/onboarding/**/*.test.ts"]),
+    declaration = True,
+    tsconfig = ":tsconfig.json",
+    transpiler = "tsc",
+    validate = False,
+    deps = [
+        ":core",
+        ":payments",
+        ":node_modules",
+        ":node_modules/effect",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 # =============================================================================
 # Test targets
 # =============================================================================

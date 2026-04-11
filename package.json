@@ -30,6 +30,10 @@
       "types": "./dist/lib/index.d.ts",
       "default": "./dist/lib/index.js"
     },
+    "./onboarding": {
+      "types": "./dist/onboarding/index.d.ts",
+      "default": "./dist/onboarding/index.js"
+    },
     "./reconciliation": {
       "types": "./dist/reconciliation/index.d.ts",
       "default": "./dist/reconciliation/index.js"
