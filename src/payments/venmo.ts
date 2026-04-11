@@ -205,6 +205,8 @@ export const createVenmoAdapter = (config: VenmoAdapterConfig): PaymentAdapter =
                     brand_name: config.brandName ?? 'Business',
                     shipping_preference: 'NO_SHIPPING',
                     user_action: 'PAY_NOW',
+                    ...(config.returnUrl ? { return_url: config.returnUrl } : {}),
+                    ...(config.cancelUrl ? { cancel_url: config.cancelUrl } : {}),
                   },
                 },
               },

@@ -133,6 +133,10 @@ export interface VenmoAdapterConfig {
   readonly brandName?: string;
   /** PayPal email of the payee (practitioner). Routes payments to their account. */
   readonly payeeEmail?: string;
+  /** Return URL after PayPal approval (required for proper popup flow). */
+  readonly returnUrl?: string;
+  /** Cancel URL when buyer cancels (required for proper popup flow). */
+  readonly cancelUrl?: string;
 }
 
 export interface StripeAdapterConfig {
