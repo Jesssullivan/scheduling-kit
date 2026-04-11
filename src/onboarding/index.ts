@@ -42,6 +42,9 @@ export type {
 	AdapterFactoryConfig,
 } from './types.js';
 
+// Factory
+export { createAdapterFactory, type AdapterFactory } from './factory.js';
+
 // Stripe
 export { buildStripeAuthorizeUrl, exchangeStripeCode } from './stripe/oauth.js';
 export { getStripeAccountStatus } from './stripe/account.js';

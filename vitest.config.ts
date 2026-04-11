@@ -4,7 +4,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 export default defineConfig({
   plugins: [svelte({ hot: !process.env.VITEST })],
   test: {
-    include: ['src/tests/**/*.test.ts', 'src/adapters/__tests__/**/*.test.ts'],
+    include: ['src/tests/**/*.test.ts', 'src/adapters/__tests__/**/*.test.ts', 'src/onboarding/__tests__/**/*.test.ts'],
     environment: 'node',
     globals: true,
     setupFiles: ['src/tests/setup.ts'],
