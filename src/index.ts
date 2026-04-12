@@ -2,10 +2,11 @@
  * @tummycrypt/scheduling-kit
  *
  * Backend-agnostic scheduling components with alternative payment support.
- * Built with Svelte 5 and fp-ts for functional composition.
+ * Built with Svelte 5 and Effect for typed workflow composition.
  *
  * @example
  * ```typescript
+ * import { Effect } from 'effect';
  * import {
  *   createSchedulingKit,
  *   createAcuityAdapter,
@@ -30,7 +31,9 @@
  * const kit = createSchedulingKit(scheduler, [venmo]);
  *
  * // Complete a booking
- * const result = await kit.completeBooking(request, 'venmo')();
+ * const result = await Effect.runPromise(
+ *   kit.completeBooking(request, 'venmo')
+ * );
  * ```
  */
 

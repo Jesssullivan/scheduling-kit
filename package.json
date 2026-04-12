@@ -3,6 +3,7 @@
   "version": "0.6.1",
   "description": "Backend-agnostic scheduling components with alternative payment support",
   "type": "module",
+  "packageManager": "pnpm@9.15.9",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -90,7 +91,7 @@
     }
   },
   "dependencies": {
-    "@tummycrypt/tinyland-auth-pg": "0.1.0",
+    "@tummycrypt/tinyland-auth-pg": "^0.1.1",
     "drizzle-orm": "0.39.3",
     "effect": "^3.19.14",
     "zod": "^4.3.5"
@@ -136,12 +137,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Jesssullivan/scheduling-kit.git"
+    "url": "git+https://github.com/Jesssullivan/scheduling-kit.git"
   },
   "publishConfig": {
     "access": "public"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20 <25"
   }
 }

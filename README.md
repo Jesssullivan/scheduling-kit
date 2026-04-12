@@ -1,18 +1,18 @@
 # @tummycrypt/scheduling-kit
 
-Backend-agnostic scheduling system with Svelte 5 components, multiple scheduling adapters, and alternative payment support. Built with fp-ts for functional composition and Zod for runtime validation.
+Backend-agnostic scheduling system with Svelte 5 components, multiple scheduling adapters, and alternative payment support. Built with Effect for typed workflows and Zod for runtime validation.
 
 Docs, prebuilts, packages and blog post to come later.  Another tinyland artifact it is time to publish.  This package powers scheduling transactions for small buisnesses in the eastern US for whom I've done contracting work. 
 
 ## Features
 
-- **Multiple scheduling backends** -- Acuity, Cal.com, or bring-your-own PostgreSQL (HomegrownAdapter)
+- **Multiple scheduling backends** -- Acuity REST API, Cal.com, or bring-your-own PostgreSQL (HomegrownAdapter)
 - **Svelte 5 components** -- ServicePicker, DateTimePicker, ClientForm, CheckoutDrawer, and more
 - **Payment adapters** -- Stripe, Venmo/PayPal SDK, cash, Zelle, check
 - **Availability engine** -- Pure-function slot generation, DST-safe via `Intl.DateTimeFormat`
 - **Reconciliation** -- Alt-payment matching and webhook handling
 - **Test infrastructure** -- Cassette-based API recording/playback, MSW mocking, property-based tests
-- **Functional core** -- fp-ts `TaskEither` pipelines throughout
+- **Functional core** -- Effect-powered scheduling flows and typed error handling
 
 ## Installation
 
@@ -36,6 +36,7 @@ pnpm add -D playwright-core
 ## Quick Start
 
 ```typescript
+import { Effect } from 'effect';
 import {
   createSchedulingKit,
   createHomegrownAdapter,
@@ -67,7 +68,9 @@ const venmo = createVenmoAdapter({
 const kit = createSchedulingKit(scheduler, [stripe, venmo]);
 
 // Complete a booking
-const result = await kit.completeBooking(request, 'stripe')();
+const result = await Effect.runPromise(
+  kit.completeBooking(request, 'stripe')
+);
 ```
 
 ## Adapters
@@ -90,6 +93,7 @@ const adapter = createHomegrownAdapter({
 ### AcuityAdapter
 
 API-based adapter for Acuity Scheduling (requires Powerhouse plan).
+For browser automation and no-API migration flows, use `@tummycrypt/scheduling-bridge`.
 
 ```typescript
 import { createAcuityAdapter } from '@tummycrypt/scheduling-kit/adapters';
@@ -152,11 +156,11 @@ Svelte 5 components using runes syntax. Optional Skeleton 4 integration for styl
 | `ProviderPicker` | Practitioner/provider selector |
 | `BookingConfirmation` | Post-booking confirmation display |
 | `CheckoutDrawer` | Full checkout flow in a slide-out drawer |
-| `HybridCheckoutDrawer` | Checkout with Acuity embed handoff |
+| `HybridCheckoutDrawer` | Checkout with Acuity iframe handoff |
 | `VenmoButton` | Venmo/PayPal payment button |
 | `VenmoCheckout` | Full Venmo checkout flow |
 | `StripeCheckout` | Stripe Elements checkout |
-| `AcuityEmbedHandoff` | Acuity iframe embed with message passing |
+| `AcuityEmbedHandoff` | Acuity iframe handoff with postMessage integration |
 
 ```svelte
 <script lang="ts">

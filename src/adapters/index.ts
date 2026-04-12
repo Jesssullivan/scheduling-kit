@@ -5,7 +5,8 @@
 // Types
 export * from './types.js';
 
-// Acuity Adapter (API-based, requires Powerhouse plan)
+// Acuity Adapter (API-based, requires Powerhouse plan).
+// Browser automation lives in @tummycrypt/scheduling-bridge.
 export { createAcuityAdapter } from './acuity.js';
 
 // Cal.com Adapter (stub for future migration)

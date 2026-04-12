@@ -1,7 +1,7 @@
 """
 BUILD.bazel for @tummycrypt/scheduling-kit.
 
-Dual-mode build: works with both pnpm (standalone) and Bazel (CI/production).
+Dual-mode build: pnpm remains the publish path, Bazel provides the hermetic graph.
   Standalone: pnpm build            (svelte-kit sync && svelte-package)
   Bazel:      bazel build //:pkg    (hermetic, cacheable)
 
@@ -87,7 +87,7 @@ npm_package(
     ],
     package = "@tummycrypt/scheduling-kit",
     tags = ["manual"],
-    version = "0.5.0",
+    version = "0.6.1",
     visibility = ["//visibility:public"],
 )
 
