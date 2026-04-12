@@ -5,6 +5,7 @@ Backend-agnostic scheduling library with pluggable adapters, payment processors,
 and Svelte UI components. Published as @tummycrypt/scheduling-kit on npm.
 
 Bzlmod-native configuration for Bazel 8+.
+CI and publishing remain pnpm-driven today; Bazel targets are the hermetic build graph.
 
 Build targets:
   bazel build //:scheduling_kit       # Svelte package build (dist/)
@@ -21,7 +22,7 @@ Subpackage targets (finer-grained caching):
 
 module(
     name = "tummycrypt_scheduling_kit",
-    version = "0.5.0",
+    version = "0.6.1",
     compatibility_level = 1,
 )
 
