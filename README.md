@@ -33,6 +33,15 @@ pnpm add @skeletonlabs/skeleton @skeletonlabs/skeleton-svelte
 pnpm add -D playwright-core
 ```
 
+## Release Hygiene
+
+```bash
+pnpm check:release-metadata
+```
+
+That check keeps `package.json`, `MODULE.bazel`, and `BUILD.bazel` aligned so
+the published npm package and Bazel metadata do not silently drift apart.
+
 ## Quick Start
 
 ```typescript
