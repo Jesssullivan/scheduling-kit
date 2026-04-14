@@ -1,0 +1,52 @@
+scheduling-kit is the reusable scheduling library repo.
+
+Purpose:
+- provide backend-agnostic scheduling contracts
+- provide payment adapters
+- provide Svelte checkout components
+- provide reusable Effect-powered orchestration
+- support migrations away from closed scheduling vendors without hard-coding a single app
+
+Boundary:
+- this repo is not the place for Playwright browser automation or Modal deployment logic
+- browser automation belongs in `@tummycrypt/scheduling-bridge`
+- site-specific admin UI belongs in the application repo
+
+Build truth:
+- pnpm is the real packaging and publish path
+- Bazel is the hermetic conformity/build graph, not yet the direct publish path
+- keep `package.json`, `MODULE.bazel`, and `BUILD.bazel` aligned
+
+CI/publish:
+- CI runs on Node 20 and 22
+- important commands:
+  - pnpm check
+  - pnpm lint
+  - pnpm test:unit
+  - pnpm test:integration
+  - pnpm build
+  - pnpm exec publint
+- publish targets:
+  - npm: @tummycrypt/scheduling-kit
+  - GitHub Packages: @jesssullivan/scheduling-kit
+
+Current tracking:
+- milestone: Sprint T: Migration Platform Contracts
+- issue: #41 downstream migration/onboarding contract
+
+Architecture rails:
+- keep library contracts reusable across multiple businesses
+- use Effect where it clarifies workflow/resource/error boundaries
+- do not cargo-cult Effect into every simple helper
+- keep MassageIthaca-specific policy out of core abstractions
+
+Files to inspect first:
+- package.json
+- MODULE.bazel
+- BUILD.bazel
+- .github/workflows/ci.yml
+- .github/workflows/publish.yml
+- src/core/**
+- src/adapters/**
+- src/payments/**
+- src/testing/**
