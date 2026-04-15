@@ -36,17 +36,21 @@ The package should be reusable across multiple businesses. Avoid app-specific as
 
 ## Current Tracking
 
-As of `2026-04-13`, the open program work here is primarily:
+As of `2026-04-15`, the active structural work is no longer just downstream
+contract cleanup. It is release-authority and artifact-truth convergence.
 
-- milestone: `Sprint T: Migration Platform Contracts`
-- issue: `#41` downstream migration/onboarding contract
+Active threads:
 
-Historical Sprint S work already landed:
+- `TIN-101` mini sprint: toolchain authority and hermetic package convergence
+- `TIN-103` converge `scheduling-kit` release authority and remote truth
+- `TIN-104` adopt Bazel-built artifact truth in package publish lanes
 
-- Bazel/package truth tightening
-- docs cleanup from fp-ts drift to Effect
-- package/dependency alignment
-- boundary cleanup clarifying what stays here vs in the bridge
+Current operational truth:
+
+- local development should default to `jesssullivan/main`
+- that branch is the current functional release line
+- `tinyland-inc/origin/main` is still divergent and should be treated as a
+  convergence target, not an equally authoritative release surface
 
 ## Build Truth
 
@@ -59,11 +63,18 @@ Do not confuse them.
 
 ### Canonical publish path
 
-Today, package publication is still driven by:
+Today, the functional publish path is still driven by:
 
 - `pnpm build`
 - GitHub Actions publish workflows
 - npm / GitHub Packages release jobs
+
+And, right now, the functional release repo is:
+
+- `Jesssullivan/scheduling-kit`
+
+Do not silently assume the `tinyland-inc` remote is equivalent while the split
+is unresolved.
 
 ### Bazel role
 
@@ -74,6 +85,13 @@ Bazel exists to provide:
 - future cacheability and reproducibility
 
 It is not yet the direct npm publish entrypoint.
+
+Current target state:
+
+1. release metadata declared once
+2. Bazel validates/builds the publishable artifact
+3. CI publishes that artifact
+4. downstream apps consume only the published version
 
 ## Bazel Guardrails
 
@@ -116,6 +134,10 @@ Current publish flows target:
 - GitHub Packages as `@jesssullivan/scheduling-kit`
 
 That GitHub Packages rename is operationally real. Do not break it accidentally when editing the publish flow.
+
+Until `TIN-103` is resolved, any release/publish changes should be made against
+the functional release line first, then ported deliberately into convergence
+work. Do not split package truth across both remotes by accident.
 
 ## Effect / Architecture Notes
 
@@ -190,5 +212,7 @@ Do not turn live-provider tests into the default CI path.
 
 - Do not move browser automation into this repo.
 - Do not let Bazel metadata drift from npm metadata.
+- Do not speak ambiguously about both `main` branches as if they are equally
+  authoritative.
 - Do not leak site-specific environment logic into library contracts.
 - Do not assume MassageIthaca is the only downstream consumer.
