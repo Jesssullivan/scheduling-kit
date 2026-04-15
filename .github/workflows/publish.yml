@@ -157,12 +157,12 @@ jobs:
             pkg.publishConfig = { registry: 'https://npm.pkg.github.com' };
             require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
-          npm publish
+          npm publish --ignore-scripts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish dry run
         if: ${{ github.event.inputs.dry_run == 'true' }}
-        run: npm publish --dry-run
+        run: npm publish --dry-run --ignore-scripts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
