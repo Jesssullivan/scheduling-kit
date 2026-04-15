@@ -5,7 +5,7 @@
    *
    * Flow:
    * 1. Custom UI for service/provider/datetime/client selection
-   * 2. Payment method selection (Venmo, Card via Stripe, Cash)
+   * 2. Payment method selection (Venmo, Card via Stripe)
    * 3. Collect payment via our own adapter
    * 4. Book on Acuity at $0 via wizard automation
    */
@@ -20,6 +20,8 @@
   import BookingConfirmation from './BookingConfirmation.svelte';
   import VenmoCheckout from './VenmoCheckout.svelte';
   import StripeCheckout from './StripeCheckout.svelte';
+  import type { PaymentCapabilities } from '../payments/types.js';
+  import { getDefaultCapabilities } from '../payments/types.js';
 
   // =============================================================================
   // TYPES
@@ -37,13 +39,6 @@
     | 'complete'
     | 'error';
 
-  interface PaymentOption {
-    id: string;
-    name: string;
-    icon: string;
-    description: string;
-  }
-
   // =============================================================================
   // PROPS
   // =============================================================================
@@ -54,9 +49,7 @@
     providers = [],
     loadingServices = false,
     loadingProviders = false,
-    paypalClientId,
-    paypalEnvironment = 'sandbox',
-    stripePublishableKey,
+    capabilities = getDefaultCapabilities(),
     onClose,
     onLoadDates,
     onLoadSlots,
@@ -64,7 +57,6 @@
     onCapturePayment,
     onCreateStripeIntent,
     onBookWithPaymentRef,
-    onCashPayment,
     onBookingComplete,
     timezone = 'America/New_York',
     skipProvider = false,
@@ -80,12 +72,8 @@
     loadingServices?: boolean;
     /** Loading state for providers */
     loadingProviders?: boolean;
-    /** PayPal Client ID for Venmo SDK */
-    paypalClientId?: string;
-    /** PayPal environment */
-    paypalEnvironment?: 'sandbox' | 'production';
-    /** Stripe publishable key (enables card payment option) */
-    stripePublishableKey?: string;
+    /** Server-derived payment capabilities */
+    capabilities?: PaymentCapabilities;
     /** Close callback */
     onClose?: () => void;
     /** Load available dates callback (startDate/endDate override default 60-day window) */
@@ -100,8 +88,6 @@
     onCreateStripeIntent?: (params: { amount: number; currency: string; description: string }) => Promise<{ clientSecret: string; intentId: string }>;
     /** Create booking with a pre-captured payment reference */
     onBookWithPaymentRef?: (params: { serviceId: string; datetime: string; client: ClientInfo; paymentRef: string; paymentProcessor: string }) => Promise<{ booking: Partial<Booking> }>;
-    /** Process Cash payment callback */
-    onCashPayment?: (data: { service: Service; client: ClientInfo; datetime: string }) => Promise<void>;
     /** Booking complete callback */
     onBookingComplete?: (booking: Partial<Booking> | AcuityBookingData) => void;
     /** IANA timezone for date/time display */
@@ -136,33 +122,8 @@
   // Stripe intent (created server-side when user selects card payment)
   let stripeIntent = $state<{ clientSecret: string; intentId: string } | undefined>(undefined);
 
-  // Payment options — dynamically built from available adapters
-  const paymentOptions = $derived.by(() => {
-    const opts: PaymentOption[] = [];
-    if (paypalClientId) {
-      opts.push({
-        id: 'venmo',
-        name: 'Venmo',
-        icon: '💙',
-        description: 'Pay with Venmo',
-      });
-    }
-    if (stripePublishableKey) {
-      opts.push({
-        id: 'stripe',
-        name: 'Credit/Debit Card',
-        icon: '💳',
-        description: 'Pay with card',
-      });
-    }
-    opts.push({
-      id: 'cash',
-      name: 'Cash at Visit',
-      icon: '💵',
-      description: 'Pay cash when you arrive',
-    });
-    return opts;
-  });
+  // Payment options — derived from server-provided capabilities
+  const paymentOptions = $derived(capabilities.methods);
 
   // =============================================================================
   // DERIVED
@@ -267,10 +228,10 @@
   const handlePaymentSelect = async (paymentId: string) => {
     selectedPayment = paymentId;
 
-    if (paymentId === 'venmo' && paypalClientId && onCreatePaymentOrder && onCapturePayment) {
+    if (paymentId === 'venmo' && capabilities.venmo?.available && onCreatePaymentOrder && onCapturePayment) {
       // Use PayPal SDK flow for Venmo — requires client-side approval
       step = 'venmo-checkout';
-    } else if (paymentId === 'stripe' && stripePublishableKey && onCreateStripeIntent && selectedService) {
+    } else if (paymentId === 'stripe' && capabilities.stripe?.available && onCreateStripeIntent && selectedService) {
       // Create PaymentIntent server-side, then show Stripe Elements
       step = 'processing';
       try {
@@ -297,16 +258,6 @@
     errorMessage = undefined;
 
     try {
-      const paymentData = {
-        service: selectedService,
-        client: clientInfo,
-        datetime: selectedDatetime,
-      };
-
-      if (paymentId === 'cash' && onCashPayment) {
-        await onCashPayment(paymentData);
-      }
-
       // Create a local booking record
       const booking: Partial<Booking> = {
         id: `local-${Date.now()}`,
@@ -320,7 +271,7 @@
         currency: selectedService.currency,
         client: clientInfo,
         status: 'pending',
-        paymentStatus: paymentId === 'cash' ? 'pending' : 'paid',
+        paymentStatus: 'paid',
       };
       completedBooking = booking;
 
@@ -592,10 +543,10 @@
                        bg-surface-100-900 hover:bg-surface-200-800 transition-colors"
                 onclick={() => handlePaymentSelect(option.id)}
               >
-                <span class="text-2xl">{option.icon}</span>
+                <span class="text-2xl">{option.icon ?? ''}</span>
                 <div class="flex-1">
-                  <p class="font-medium">{option.name}</p>
-                  <p class="text-sm text-surface-600-400">{option.description}</p>
+                  <p class="font-medium">{option.displayName}</p>
+                  <p class="text-sm text-surface-600-400">{option.description ?? ''}</p>
                 </div>
                 <span class="text-surface-400-600">→</span>
               </button>
@@ -619,10 +570,10 @@
             </div>
           {/if}
 
-          {#if paypalClientId && onCreatePaymentOrder && onCapturePayment && selectedService}
+          {#if capabilities.venmo?.available && onCreatePaymentOrder && onCapturePayment && selectedService}
             <VenmoCheckout
-              clientId={paypalClientId}
-              environment={paypalEnvironment}
+              clientId={capabilities.venmo?.clientId ?? ''}
+              environment={capabilities.venmo?.environment ?? 'sandbox'}
               amount={selectedService.price}
               currency={selectedService.currency ?? 'USD'}
               description={selectedService.name}
@@ -660,9 +611,9 @@
             </div>
           {/if}
 
-          {#if stripePublishableKey && stripeIntent && selectedService}
+          {#if capabilities.stripe?.available && stripeIntent && selectedService}
             <StripeCheckout
-              publishableKey={stripePublishableKey}
+              publishableKey={capabilities.stripe?.publishableKey ?? ''}
               clientSecret={stripeIntent.clientSecret}
               amount={selectedService.price}
               currency={selectedService.currency ?? 'USD'}
