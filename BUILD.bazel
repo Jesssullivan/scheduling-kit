@@ -87,7 +87,7 @@ npm_package(
     ],
     package = "@tummycrypt/scheduling-kit",
     tags = ["manual"],
-    version = "0.6.1",
+    version = "0.7.0",
     visibility = ["//visibility:public"],
 )
 

@@ -200,6 +200,49 @@ export interface PaymentRegistry {
   getAvailableMethods(): Promise<PaymentMethodOption[]>;
 }
 
+// =============================================================================
+// PAYMENT CAPABILITIES CONTRACT
+// =============================================================================
+
+/** Stripe payment capability for a practitioner */
+export interface StripeCapability {
+  readonly available: boolean;
+  readonly publishableKey: string;
+  readonly connectedAccountId?: string;
+}
+
+/** Venmo/PayPal payment capability for a practitioner */
+export interface VenmoCapability {
+  readonly available: boolean;
+  readonly clientId: string;
+  readonly environment: 'sandbox' | 'production';
+}
+
+/**
+ * Server-derived payment capabilities for a practitioner.
+ *
+ * This is the single source of truth for what payment methods
+ * are available on any booking surface. Both the drawer and
+ * the full-page booking flow must use this contract.
+ *
+ * `cash: false` is a type-level guarantee — Cash at Visit
+ * is structurally impossible without changing this type.
+ */
+export interface PaymentCapabilities {
+  readonly methods: PaymentMethodOption[];
+  readonly stripe: StripeCapability | null;
+  readonly venmo: VenmoCapability | null;
+  readonly cash: false;
+}
+
+/** Returns safe default capabilities (nothing available, loading state) */
+export const getDefaultCapabilities = (): PaymentCapabilities => ({
+  methods: [],
+  stripe: null,
+  venmo: null,
+  cash: false,
+});
+
 export const createPaymentRegistry = (): PaymentRegistry => {
   const adapters = new Map<string, PaymentAdapter>();
 
