@@ -42,6 +42,25 @@ pnpm check:release-metadata
 That check keeps `package.json`, `MODULE.bazel`, and `BUILD.bazel` aligned so
 the published npm package and Bazel metadata do not silently drift apart.
 
+## Release Authority
+
+Current reality:
+
+- the functional release line is `Jesssullivan/scheduling-kit`
+- `tinyland-inc/scheduling-kit` is still a convergence target while remote truth
+  is being cleaned up
+
+Until that convergence work is complete, treat `Jesssullivan/main` as the
+release authority for package publication and metadata changes. Do not assume
+both `main` branches are equivalent.
+
+Longer term, the intended publish shape is:
+
+1. release metadata declared once
+2. Bazel validates/builds the publishable artifact
+3. GitHub Actions publishes that artifact to npm
+4. downstream apps consume the published package only
+
 ## Quick Start
 
 ```typescript
