@@ -20,6 +20,8 @@ load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
 load("@aspect_rules_js//npm:defs.bzl", "npm_package")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
 load("@npm//:defs.bzl", "npm_link_all_packages")
+load("@npm//:svelte-check/package_json.bzl", svelte_check = "bin")
+load("@npm//:@sveltejs/package/package_json.bzl", svelte_package = "bin")
 load("@npm//:vitest/package_json.bzl", vitest_bin = "bin")
 
 # =============================================================================
@@ -27,6 +29,16 @@ load("@npm//:vitest/package_json.bzl", vitest_bin = "bin")
 # =============================================================================
 
 npm_link_all_packages(name = "node_modules")
+
+svelte_check.svelte_check_binary(
+    name = "svelte_check",
+    visibility = ["//visibility:public"],
+)
+
+svelte_package.svelte_package_binary(
+    name = "svelte_package",
+    visibility = ["//visibility:public"],
+)
 
 # =============================================================================
 # Svelte package build
@@ -38,7 +50,7 @@ npm_link_all_packages(name = "node_modules")
 js_run_binary(
     name = "scheduling_kit_build",
     tags = ["manual"],
-    tool = ":node_modules/@sveltejs/package",
+    tool = ":svelte_package",
     srcs = glob(
         [
             "src/**/*.ts",
@@ -219,7 +231,7 @@ vitest_bin.vitest_test(
         "tsconfig.json",
         ":node_modules/vitest",
         "vitest.config.ts",
-    ] + glob(["src/**/*.ts"]) + glob(["src/tests/**/*.test.ts"]),
+    ] + glob(["src/**/*.ts"]),
     args = [
         "run",
         "--reporter=verbose",
@@ -237,7 +249,7 @@ vitest_bin.vitest_test(
 js_run_binary(
     name = "typecheck",
     tags = ["manual"],
-    tool = ":node_modules/svelte-check",
+    tool = ":svelte_check",
     srcs = glob(
         [
             "src/**/*.ts",

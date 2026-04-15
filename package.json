@@ -143,6 +143,12 @@
   "publishConfig": {
     "access": "public"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "msw"
+    ]
+  },
   "engines": {
     "node": ">=20 <25"
   }
