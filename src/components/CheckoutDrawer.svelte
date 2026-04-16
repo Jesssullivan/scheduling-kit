@@ -5,7 +5,7 @@
    */
   import { Effect } from 'effect';
   import type { SchedulingKit } from '../core/pipelines.js';
-  import type { Service, Provider, ClientInfo, AvailableDate, TimeSlot } from '../core/types.js';
+  import { Errors, type Service, type Provider, type ClientInfo, type AvailableDate, type TimeSlot, type SchedulingError } from '../core/types.js';
   import type { PaymentMethodOption } from '../payments/types.js';
   import { createCheckoutStore, setCheckoutContext } from '../stores/checkout.svelte.js';
   import { generateIdempotencyKey } from '../core/utils.js';
@@ -228,11 +228,24 @@
       store.setBooking(result.booking);
       onBookingComplete?.(result.booking.id);
     } catch (e) {
-      errorMessage = getErrorMessage(e);
-      store.setError(e);
+      const error = toSchedulingError(e);
+      errorMessage = getErrorMessage(error);
+      store.setError(error);
     }
 
     processingBooking = false;
+  };
+
+  const toSchedulingError = (error: unknown): SchedulingError => {
+    if (typeof error === 'object' && error !== null && '_tag' in error) {
+      return error as SchedulingError;
+    }
+
+    if (error instanceof Error) {
+      return Errors.infrastructure('UNKNOWN', error.message, error);
+    }
+
+    return Errors.infrastructure('UNKNOWN', String(error));
   };
 
   // Get user-friendly error message

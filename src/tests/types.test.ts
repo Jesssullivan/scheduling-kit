@@ -247,10 +247,10 @@ describe('Property-based Error Tests', () => {
       fc.tuple(fc.string(), fc.string()).map(([code, msg]) => Errors.acuity(code, msg)),
       fc.tuple(fc.string(), fc.string()).map(([code, msg]) => Errors.payment(code, msg, 'test')),
       fc.tuple(fc.string(), fc.string()).map(([field, msg]) => Errors.validation(field, msg)),
-      fc.tuple(
-        fc.constantFrom('NETWORK', 'TIMEOUT', 'REDIS', 'UNKNOWN' as const),
-        fc.string()
-      ).map(([code, msg]) => Errors.infrastructure(code, msg))
+      fc.record({
+        code: fc.constantFrom<'NETWORK' | 'TIMEOUT' | 'REDIS' | 'UNKNOWN'>('NETWORK', 'TIMEOUT', 'REDIS', 'UNKNOWN'),
+        msg: fc.string(),
+      }).map(({ code, msg }) => Errors.infrastructure(code, msg))
     );
 
     it('all errors have _tag property', () => {

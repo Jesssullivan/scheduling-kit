@@ -50,13 +50,22 @@ const expectFailure = async <A>(effect: Effect.Effect<A, SchedulingError>): Prom
   throw new Error('Unreachable');
 };
 
+const expectErrorMessageContains = (error: SchedulingError, text: string) => {
+  if ('message' in error) {
+    expect(error.message).toContain(text);
+    return;
+  }
+
+  throw new Error(`Expected error with message, got ${error._tag}`);
+};
+
 describe('Promise Converters', () => {
   describe('fromPromise', () => {
     it('converts successful promise to success', async () => {
       const result = await expectSuccess(
         fromPromise(
           () => Promise.resolve(42),
-          () => Errors.infrastructure('TEST', 'Should not fail')
+          () => Errors.infrastructure('UNKNOWN', 'Should not fail')
         )
       );
 
@@ -67,12 +76,12 @@ describe('Promise Converters', () => {
       const error = await expectFailure(
         fromPromise(
           () => Promise.reject(new Error('boom')),
-          (e) => Errors.infrastructure('TEST', String(e))
+          (e) => Errors.infrastructure('UNKNOWN', String(e))
         )
       );
 
       expect(error._tag).toBe('InfrastructureError');
-      expect(error.message).toContain('boom');
+      expectErrorMessageContains(error, 'boom');
     });
 
     it('preserves async behavior', async () => {
@@ -83,7 +92,7 @@ describe('Promise Converters', () => {
           called = true;
           return 'done';
         },
-        () => Errors.infrastructure('TEST', 'fail')
+        () => Errors.infrastructure('UNKNOWN', 'fail')
       );
 
       expect(called).toBe(false); // lazy
@@ -96,7 +105,7 @@ describe('Promise Converters', () => {
     it('creates a function that returns Effect', async () => {
       const fetchUser = fromPromiseK(
         async (id: string) => ({ id, name: 'Test' }),
-        () => Errors.infrastructure('HTTP', 'Failed')
+        () => Errors.infrastructure('NETWORK', 'Failed')
       );
 
       const result = await expectSuccess(fetchUser('123'));
@@ -156,8 +165,8 @@ describe('Validation', () => {
       );
 
       expect(error._tag).toBe('ValidationError');
-      expect(error.message).toContain('email');
-      expect(error.message).toContain('age');
+      expectErrorMessageContains(error, 'email');
+      expectErrorMessageContains(error, 'age');
     });
   });
 });
@@ -185,7 +194,7 @@ describe('Retry & Resilience', () => {
       const effect = Effect.suspend(() => {
         attempts++;
         if (attempts < 3) {
-          return Effect.fail(Errors.infrastructure('NET', 'Network error'));
+          return Effect.fail(Errors.infrastructure('NETWORK', 'Network error'));
         }
         return Effect.succeed(42);
       });
@@ -204,7 +213,7 @@ describe('Retry & Resilience', () => {
       let attempts = 0;
       const effect = Effect.suspend(() => {
         attempts++;
-        return Effect.fail(Errors.infrastructure('NET', 'Always fails'));
+        return Effect.fail(Errors.infrastructure('NETWORK', 'Always fails'));
       });
 
       const retried = withRetry({ maxAttempts: 2, initialDelayMs: 10 })(effect);
@@ -259,13 +268,14 @@ describe('Retry & Resilience', () => {
         new Promise((resolve) => setTimeout(() => resolve(42), 500))
       ).pipe(Effect.mapError(() => Errors.infrastructure('UNKNOWN', 'unreachable') as SchedulingError));
 
-      const customError = Errors.infrastructure('CUSTOM_TIMEOUT', 'Too slow!');
+      const customError = Errors.infrastructure('TIMEOUT', 'Too slow!');
       const timed = withTimeout<number>(10, customError)(slowEffect as Effect.Effect<number, SchedulingError>);
       const error = await expectFailure(timed);
 
       expect(error._tag).toBe('InfrastructureError');
       if (error._tag === 'InfrastructureError') {
-        expect(error.code).toBe('CUSTOM_TIMEOUT');
+        expect(error.code).toBe('TIMEOUT');
+        expect(error.message).toBe('Too slow!');
       }
     });
   });
@@ -360,9 +370,9 @@ describe('Sequencing Helpers', () => {
 describe('Error Recovery', () => {
   describe('recoverWith', () => {
     it('recovers from matching error', async () => {
-      const effect = Effect.fail(Errors.infrastructure('NOT_FOUND', 'Missing'));
+      const effect = Effect.fail(Errors.infrastructure('NETWORK', 'Missing'));
       const recovered = recoverWith<number>(
-        (e) => e._tag === 'InfrastructureError' && e.code === 'NOT_FOUND',
+        (e) => e._tag === 'InfrastructureError' && e.code === 'NETWORK',
         0
       )(effect);
 
@@ -384,13 +394,13 @@ describe('Error Recovery', () => {
 
   describe('mapError', () => {
     it('transforms errors', async () => {
-      const effect = Effect.fail(Errors.infrastructure('NET', 'Network'));
+      const effect = Effect.fail(Errors.infrastructure('NETWORK', 'Network'));
       const mapped = mapError(
-        (e) => Errors.infrastructure('WRAPPED', `Wrapped: ${e.message}`)
+        (e) => Errors.infrastructure('UNKNOWN', `Wrapped: ${'message' in e ? e.message : e._tag}`)
       )(effect);
 
       const error = await expectFailure(mapped);
-      expect(error.message).toContain('Wrapped:');
+      expectErrorMessageContains(error, 'Wrapped:');
     });
   });
 });

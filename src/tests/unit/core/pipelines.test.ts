@@ -16,7 +16,7 @@ import {
 } from '../../../core/pipelines.js';
 import { Errors } from '../../../core/types.js';
 import type { SchedulingAdapter } from '../../../adapters/types.js';
-import type { PaymentAdapter } from '../../../payments/types.js';
+import type { PaymentAdapter, PaymentWebhookEvent } from '../../../payments/types.js';
 import {
   createService,
   createProvider,
@@ -80,6 +80,7 @@ const createMockScheduler = (): SchedulingAdapter => ({
 
 const createMockPaymentAdapter = (name = 'cash'): PaymentAdapter => ({
   name,
+  displayName: 'Cash',
   isAvailable: vi.fn(() => Effect.succeed(true)),
   createIntent: vi.fn(() => Effect.succeed(createPaymentIntent())),
   capturePayment: vi.fn(() => Effect.succeed(createPaymentResult())),
@@ -97,18 +98,21 @@ const createMockPaymentAdapter = (name = 'cash'): PaymentAdapter => ({
   verifyWebhook: vi.fn(() => Effect.succeed(true)),
   parseWebhook: vi.fn(() =>
     Effect.succeed({
-      type: 'payment.captured',
+      type: 'payment.completed',
       intentId: 'pi_test_12345',
       transactionId: 'txn_test_12345',
       amount: 20000,
       currency: 'USD',
       timestamp: new Date().toISOString(),
-    })
+      raw: {},
+    } satisfies PaymentWebhookEvent)
   ),
   getClientConfig: () => ({
-    enabled: true,
+    name,
     displayName: 'Cash',
-    instructions: 'Pay in cash at appointment',
+    instructions: { cash: 'Pay in cash at appointment' },
+    environment: 'production',
+    supportedCurrencies: ['USD'],
   }),
 });
 
@@ -154,10 +158,10 @@ describe('completeBookingWithAltPayment', () => {
   });
 
   it('returns error for unknown payment method', async () => {
-    input.paymentMethod = 'unknown';
+    const unknownInput: BookingPipelineInput = { ...input, paymentMethod: 'unknown' };
 
     const error = await expectFailureTag(
-      completeBookingWithAltPayment(ctx, input),
+      completeBookingWithAltPayment(ctx, unknownInput),
       'PaymentError'
     );
 
@@ -168,10 +172,13 @@ describe('completeBookingWithAltPayment', () => {
   });
 
   it('returns validation error for invalid request', async () => {
-    input.request = { ...input.request, client: { ...input.request.client, email: 'invalid' } };
+    const invalidInput: BookingPipelineInput = {
+      ...input,
+      request: { ...input.request, client: { ...input.request.client, email: 'invalid' } },
+    };
 
     const error = await expectFailureTag(
-      completeBookingWithAltPayment(ctx, input),
+      completeBookingWithAltPayment(ctx, invalidInput),
       'ValidationError'
     );
 

@@ -4,6 +4,7 @@
  */
 
 import { setupServer } from 'msw/node';
+import { afterAll, afterEach, beforeAll } from 'vitest';
 import { acuityHandlers } from './handlers/acuity.js';
 import { paypalHandlers } from './handlers/paypal.js';
 import { stripeHandlers } from './handlers/stripe.js';
