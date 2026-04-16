@@ -17,7 +17,7 @@ env:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v6
 
@@ -76,7 +76,7 @@ jobs:
 
   publish-npm:
     needs: [test]
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
     permissions:
       contents: read
       id-token: write
@@ -109,7 +109,7 @@ jobs:
 
   publish-github:
     needs: [test]
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
     permissions:
       contents: read
       packages: write
