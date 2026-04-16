@@ -21,6 +21,13 @@ jobs:
     runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          clean: false
+
+      - name: Clean stale workspace artifacts
+        run: |
+          chmod -R u+w pkg pkg-github dist node_modules .svelte-kit bazel-bin bazel-out bazel-testlogs bazel-scheduling-kit .pnpm-store 2>/dev/null || true
+          rm -rf pkg pkg-github dist node_modules .svelte-kit bazel-bin bazel-out bazel-testlogs bazel-scheduling-kit .pnpm-store bazel-pkg.tgz MODULE.bazel.lock
 
       - uses: actions/setup-node@v6
         with:
@@ -95,6 +102,9 @@ jobs:
       - name: Extract Bazel package artifact
         run: tar -xzf bazel-pkg.tgz
 
+      - name: Normalize Bazel package permissions
+        run: chmod -R u+w pkg
+
       - name: Publish to npm
         if: ${{ github.event_name == 'release' || github.event.inputs.dry_run != 'true' }}
         env:
@@ -102,14 +112,14 @@ jobs:
           RUNNER_ENVIRONMENT: ${{ runner.environment }}
         run: |
           if [ "$RUNNER_ENVIRONMENT" = "self-hosted" ]; then
-            npm publish ./pkg --access public
+            npm publish ./pkg --access public --ignore-scripts
           else
-            npm publish ./pkg --access public --provenance
+            npm publish ./pkg --access public --provenance --ignore-scripts
           fi
 
       - name: Publish dry run
         if: ${{ github.event.inputs.dry_run == 'true' }}
-        run: npm publish ./pkg --access public --dry-run
+        run: npm publish ./pkg --access public --dry-run --ignore-scripts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -134,6 +144,9 @@ jobs:
 
       - name: Extract Bazel package artifact
         run: tar -xzf bazel-pkg.tgz
+
+      - name: Normalize Bazel package permissions
+        run: chmod -R u+w pkg
 
       - name: Prepare GitHub Packages publish directory
         run: |
