@@ -23,6 +23,10 @@
       "types": "./dist/payments/index.d.ts",
       "default": "./dist/payments/index.js"
     },
+    "./payments/types": {
+      "types": "./dist/payments/types.d.ts",
+      "default": "./dist/payments/types.js"
+    },
     "./core": {
       "types": "./dist/core/index.d.ts",
       "default": "./dist/core/index.js"
