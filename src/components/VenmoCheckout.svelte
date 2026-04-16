@@ -389,11 +389,9 @@
   .skeleton-button {
     width: 100%;
     height: 48px;
-    background: linear-gradient(
-      90deg,
-      var(--color-surface-200) 25%,
-      var(--color-surface-300) 50%,
-      var(--color-surface-200) 75%
+    background: light-dark(
+      linear-gradient(90deg, var(--color-surface-200) 25%, var(--color-surface-300) 50%, var(--color-surface-200) 75%),
+      linear-gradient(90deg, var(--color-surface-800) 25%, var(--color-surface-700) 50%, var(--color-surface-800) 75%)
     );
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
@@ -418,7 +416,7 @@
     display: inline-block;
     width: 2rem;
     height: 2rem;
-    border: 3px solid var(--color-surface-300);
+    border: 3px solid light-dark(var(--color-surface-300), var(--color-surface-700));
     border-top-color: var(--color-primary-500);
     border-radius: 50%;
     animation: spin 1s linear infinite;
