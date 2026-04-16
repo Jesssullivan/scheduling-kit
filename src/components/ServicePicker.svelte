@@ -137,7 +137,10 @@
 
   .skeleton-card {
     height: 100px;
-    background: linear-gradient(90deg, var(--color-surface-200) 25%, var(--color-surface-300) 50%, var(--color-surface-200) 75%);
+    background: light-dark(
+      linear-gradient(90deg, var(--color-surface-200) 25%, var(--color-surface-300) 50%, var(--color-surface-200) 75%),
+      linear-gradient(90deg, var(--color-surface-800) 25%, var(--color-surface-700) 50%, var(--color-surface-800) 75%)
+    );
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
     border-radius: var(--radius-container);

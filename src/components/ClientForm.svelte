@@ -408,7 +408,7 @@
   .input,
   .textarea {
     padding: 0.75rem 1rem;
-    border: 1px solid var(--color-surface-300);
+    border: 1px solid light-dark(var(--color-surface-300), var(--color-surface-700));
     border-radius: var(--radius-container);
     background: var(--color-surface-50);
     transition: border-color 0.2s, box-shadow 0.2s;
