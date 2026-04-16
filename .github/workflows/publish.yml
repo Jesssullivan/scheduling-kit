@@ -59,6 +59,9 @@ jobs:
       - name: Validate Bazel npm package contents
         run: npm pack --dry-run ./bazel-bin/pkg
 
+      - name: Validate Bazel npm publish dry run
+        run: npm publish --dry-run --ignore-scripts --access public ./bazel-bin/pkg
+
       - name: Archive Bazel package artifact
         run: tar -czf bazel-pkg.tgz -C bazel-bin pkg
 
@@ -79,7 +82,7 @@ jobs:
         run: pnpm build
 
       - name: Validate package
-        run: pnpm exec publint
+        run: pnpm check:package
 
   publish-npm:
     needs: [test]
@@ -153,17 +156,18 @@ jobs:
           cp -R pkg pkg-github
           chmod -R u+w pkg-github
 
-      - name: Publish to GitHub Packages
-        if: ${{ github.event_name == 'release' || github.event.inputs.dry_run != 'true' }}
+      - name: Rewrite GitHub Packages metadata
         run: |
-          # Temporarily override scope for GH Packages (npm scope != GH owner)
           node -e "
             const pkg = require('./pkg-github/package.json');
             pkg.name = '@jesssullivan/scheduling-kit';
-            pkg.publishConfig = { registry: 'https://npm.pkg.github.com' };
+            pkg.publishConfig = { ...(pkg.publishConfig || {}), registry: 'https://npm.pkg.github.com' };
             require('fs').writeFileSync('./pkg-github/package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
-          npm publish ./pkg-github --ignore-scripts
+
+      - name: Publish to GitHub Packages
+        if: ${{ github.event_name == 'release' || github.event.inputs.dry_run != 'true' }}
+        run: npm publish ./pkg-github --ignore-scripts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

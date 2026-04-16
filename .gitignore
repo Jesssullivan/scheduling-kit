@@ -12,3 +12,7 @@ playwright-report/
 test-results/
 *.tgz
 PROGRESS.md
+MODULE.bazel.lock
+bazel-*
+pkg/
+pkg-github/

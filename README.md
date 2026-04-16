@@ -37,10 +37,14 @@ pnpm add -D playwright-core
 
 ```bash
 pnpm check:release-metadata
+pnpm check:package
+npx --yes @bazel/bazelisk build //:pkg
+npm pack --dry-run ./bazel-bin/pkg
 ```
 
-That check keeps `package.json`, `MODULE.bazel`, and `BUILD.bazel` aligned so
-the published npm package and Bazel metadata do not silently drift apart.
+Those checks keep `package.json`, `MODULE.bazel`, and `BUILD.bazel` aligned,
+then validate the Bazel-built package artifact before anything gets near a
+registry.
 
 ## Release Authority
 

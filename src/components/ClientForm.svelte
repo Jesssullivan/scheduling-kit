@@ -20,21 +20,34 @@
   } = $props();
 
   // Form state
-  let firstName = $state(initialData?.firstName ?? '');
-  let lastName = $state(initialData?.lastName ?? '');
-  let email = $state(initialData?.email ?? '');
-  let phone = $state(initialData?.phone ?? '');
-  let notes = $state(initialData?.notes ?? '');
+  let firstName = $state('');
+  let lastName = $state('');
+  let email = $state('');
+  let phone = $state('');
+  let notes = $state('');
 
   // Intake fields
-  let painRadio = $state<'yes' | 'no' | ''>(initialData?.customFields?.painRadio as 'yes' | 'no' || '');
-  let clenching = $state<'yes' | 'no' | ''>(initialData?.customFields?.clenching as 'yes' | 'no' || '');
-  let headaches = $state<'yes' | 'no' | ''>(initialData?.customFields?.headaches as 'yes' | 'no' || '');
-  let howDidYouHear = $state<string[]>(
-    initialData?.customFields?.howDidYouHear?.split(',').filter(Boolean) ?? []
-  );
-  let medication = $state(initialData?.customFields?.medication ?? '');
-  let termsAccepted = $state(initialData?.customFields?.termsAccepted === 'true');
+  let painRadio = $state<'yes' | 'no' | ''>('');
+  let clenching = $state<'yes' | 'no' | ''>('');
+  let headaches = $state<'yes' | 'no' | ''>('');
+  let howDidYouHear = $state<string[]>([]);
+  let medication = $state('');
+  let termsAccepted = $state(false);
+
+  $effect(() => {
+    const customFields = initialData?.customFields;
+    firstName = initialData?.firstName ?? '';
+    lastName = initialData?.lastName ?? '';
+    email = initialData?.email ?? '';
+    phone = initialData?.phone ?? '';
+    notes = initialData?.notes ?? '';
+    painRadio = (customFields?.painRadio as 'yes' | 'no' | '') || '';
+    clenching = (customFields?.clenching as 'yes' | 'no' | '') || '';
+    headaches = (customFields?.headaches as 'yes' | 'no' | '') || '';
+    howDidYouHear = customFields?.howDidYouHear?.split(',').filter(Boolean) ?? [];
+    medication = customFields?.medication ?? '';
+    termsAccepted = customFields?.termsAccepted === 'true';
+  });
 
   const hearOptions = [
     'Internet search',

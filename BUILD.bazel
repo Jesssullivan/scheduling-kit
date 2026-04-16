@@ -252,12 +252,17 @@ js_run_binary(
     tool = ":svelte_check",
     srcs = glob(
         [
+            ".svelte-kit/**/*.d.ts",
+            ".svelte-kit/**/*.json",
+            ".svelte-kit/**/*.js",
+            ".svelte-kit/**/*.ts",
             "src/**/*.ts",
             "src/**/*.svelte",
             "src/**/*.svelte.ts",
         ],
         allow_empty = True,
     ) + [
+        "svelte.config.js",
         "tsconfig.json",
         ":node_modules",
     ],
@@ -275,6 +280,7 @@ js_run_binary(
 
 exports_files(
     [
+        ".npmrc",
         "package.json",
         "svelte.config.js",
         "tsconfig.json",
