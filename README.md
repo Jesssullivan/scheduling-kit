@@ -47,12 +47,11 @@ the published npm package and Bazel metadata do not silently drift apart.
 Current reality:
 
 - the functional release line is `Jesssullivan/scheduling-kit`
-- `tinyland-inc/scheduling-kit` is still a convergence target while remote truth
-  is being cleaned up
+- `tinyland-inc/scheduling-kit` is now a downstream mirror and validation
+  surface, not a second publish authority
 
-Until that convergence work is complete, treat `Jesssullivan/main` as the
-release authority for package publication and metadata changes. Do not assume
-both `main` branches are equivalent.
+Treat `Jesssullivan/main` as the release authority for package publication and
+metadata changes. Do not assume both `main` branches are equivalent.
 
 Longer term, the intended publish shape is:
 
@@ -100,6 +99,22 @@ const result = await Effect.runPromise(
   kit.completeBooking(request, 'stripe')
 );
 ```
+
+## Ownership Boundary
+
+This package owns reusable scheduling contracts, payment adapters, checkout UI,
+and Acuity REST plus iframe handoff primitives.
+
+It does **not** own:
+
+- browser automation
+- remote Acuity scraping
+- Modal deployment/runtime control
+- site-specific booking orchestration
+
+If your Acuity flow needs browser automation or remote bridge-backed booking
+semantics, that ownership belongs to `@tummycrypt/scheduling-bridge` plus the
+adopter app that wires the handoff.
 
 ## Adapters
 
@@ -184,11 +199,11 @@ Svelte 5 components using runes syntax. Optional Skeleton 4 integration for styl
 | `ProviderPicker` | Practitioner/provider selector |
 | `BookingConfirmation` | Post-booking confirmation display |
 | `CheckoutDrawer` | Full checkout flow in a slide-out drawer |
-| `HybridCheckoutDrawer` | Checkout with Acuity iframe handoff |
+| `HybridCheckoutDrawer` | Checkout UI that hands booking off to adopter-provided Acuity flow |
 | `VenmoButton` | Venmo/PayPal payment button |
 | `VenmoCheckout` | Full Venmo checkout flow |
 | `StripeCheckout` | Stripe Elements checkout |
-| `AcuityEmbedHandoff` | Acuity iframe handoff with postMessage integration |
+| `AcuityEmbedHandoff` | Prefilled Acuity iframe primitive with postMessage integration |
 
 ```svelte
 <script lang="ts">

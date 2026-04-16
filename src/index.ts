@@ -9,15 +9,14 @@
  * import { Effect } from 'effect';
  * import {
  *   createSchedulingKit,
- *   createAcuityAdapter,
+ *   createHomegrownAdapter,
  *   createVenmoAdapter,
  * } from '@tummycrypt/scheduling-kit';
  *
  * // Create adapters
- * const scheduler = createAcuityAdapter({
- *   type: 'acuity',
- *   userId: process.env.ACUITY_USER_ID,
- *   apiKey: process.env.ACUITY_API_KEY,
+ * const scheduler = createHomegrownAdapter({
+ *   db: drizzleInstance,
+ *   timezone: 'America/New_York',
  * });
  *
  * const venmo = createVenmoAdapter({

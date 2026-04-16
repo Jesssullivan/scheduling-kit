@@ -49,8 +49,8 @@ Current operational truth:
 
 - local development should default to `jesssullivan/main`
 - that branch is the current functional release line
-- `tinyland-inc/origin/main` is still divergent and should be treated as a
-  convergence target, not an equally authoritative release surface
+- `tinyland-inc/origin/main` is now a downstream mirror/validation surface,
+  not an equally authoritative release surface
 
 ## Build Truth
 
@@ -73,8 +73,8 @@ And, right now, the functional release repo is:
 
 - `Jesssullivan/scheduling-kit`
 
-Do not silently assume the `tinyland-inc` remote is equivalent while the split
-is unresolved.
+Do not silently assume the `tinyland-inc` remote is equivalent just because it
+still exists.
 
 ### Bazel role
 
@@ -135,9 +135,9 @@ Current publish flows target:
 
 That GitHub Packages rename is operationally real. Do not break it accidentally when editing the publish flow.
 
-Until `TIN-103` is resolved, any release/publish changes should be made against
-the functional release line first, then ported deliberately into convergence
-work. Do not split package truth across both remotes by accident.
+Release/publish changes should be made against the functional release line
+first, then ported deliberately into the mirror when needed. Do not split
+package truth across both remotes by accident.
 
 ## Effect / Architecture Notes
 

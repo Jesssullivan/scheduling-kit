@@ -14,7 +14,7 @@ export { default as BookingConfirmation } from './BookingConfirmation.svelte';
 export { default as CheckoutDrawer } from './CheckoutDrawer.svelte';
 export { default as HybridCheckoutDrawer } from './HybridCheckoutDrawer.svelte';
 
-// Acuity embed components (for hybrid flow)
+// Acuity iframe handoff primitives for adopter-owned flows
 export { default as AcuityEmbedHandoff } from './AcuityEmbedHandoff.svelte';
 
 // Venmo/PayPal payment components

@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
    * AcuityEmbedHandoff Component
-   * Shows a pre-filled Acuity embed for completing booking with card payment
+   * Shows a pre-filled Acuity iframe as a handoff primitive
    * Listens for postMessage to capture booking confirmation
    */
   import { onMount, onDestroy } from 'svelte';
