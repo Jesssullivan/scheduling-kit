@@ -102,14 +102,14 @@ jobs:
           RUNNER_ENVIRONMENT: ${{ runner.environment }}
         run: |
           if [ "$RUNNER_ENVIRONMENT" = "self-hosted" ]; then
-            npm publish ./pkg --access public
+            npm publish ./pkg --access public --ignore-scripts
           else
-            npm publish ./pkg --access public --provenance
+            npm publish ./pkg --access public --provenance --ignore-scripts
           fi
 
       - name: Publish dry run
         if: ${{ github.event.inputs.dry_run == 'true' }}
-        run: npm publish ./pkg --access public --dry-run
+        run: npm publish ./pkg --access public --dry-run --ignore-scripts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
