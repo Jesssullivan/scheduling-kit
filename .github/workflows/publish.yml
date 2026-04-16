@@ -11,177 +11,26 @@ on:
         type: boolean
         default: true
 
-env:
-  PNPM_VERSION: 9.15.9
-  DEFAULT_NODE_VERSION: 22
-  PNPM_STORE_PATH: ${{ github.workspace }}/.pnpm-store
-
 jobs:
-  test:
-    runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          clean: false
-
-      - name: Clean stale workspace artifacts
-        run: |
-          chmod -R u+w pkg pkg-github dist node_modules .svelte-kit bazel-bin bazel-out bazel-testlogs bazel-scheduling-kit .pnpm-store 2>/dev/null || true
-          rm -rf pkg pkg-github dist node_modules .svelte-kit bazel-bin bazel-out bazel-testlogs bazel-scheduling-kit .pnpm-store bazel-pkg.tgz MODULE.bazel.lock
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.DEFAULT_NODE_VERSION }}
-          package-manager-cache: false
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Configure workspace pnpm store
-        run: pnpm config set store-dir "$PNPM_STORE_PATH"
-
-      - uses: actions/cache@v5
-        with:
-          path: ${{ env.PNPM_STORE_PATH }}
-          key: ${{ runner.os }}-${{ runner.name }}-node-${{ env.DEFAULT_NODE_VERSION }}-pnpm-${{ env.PNPM_VERSION }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.name }}-node-${{ env.DEFAULT_NODE_VERSION }}-pnpm-${{ env.PNPM_VERSION }}-
-
-      - name: Verify release metadata
-        run: node scripts/check-release-metadata.mjs
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Validate Bazel package artifact
-        run: npx --yes @bazel/bazelisk build //:pkg
-
-      - name: Validate Bazel npm package contents
-        run: npm pack --dry-run ./bazel-bin/pkg
-
-      - name: Archive Bazel package artifact
-        run: tar -czf bazel-pkg.tgz -C bazel-bin pkg
-
-      - name: Upload Bazel package artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: bazel-pkg
-          path: bazel-pkg.tgz
-          if-no-files-found: error
-
-      - name: Sync SvelteKit
-        run: pnpm exec svelte-kit sync
-
-      - name: Run tests
-        run: pnpm test:unit
-
-      - name: Build
-        run: pnpm build
-
-      - name: Validate package
-        run: pnpm exec publint
-
-  publish-npm:
-    needs: [test]
-    runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.DEFAULT_NODE_VERSION }}
-          package-manager-cache: false
-          registry-url: https://registry.npmjs.org
-
-      - name: Download Bazel package artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: bazel-pkg
-
-      - name: Extract Bazel package artifact
-        run: tar -xzf bazel-pkg.tgz
-
-      - name: Normalize Bazel package permissions
-        run: chmod -R u+w pkg
-
-      - name: Publish to npm
-        if: ${{ github.event_name == 'release' || github.event.inputs.dry_run != 'true' }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          RUNNER_ENVIRONMENT: ${{ runner.environment }}
-        run: |
-          if [ "$RUNNER_ENVIRONMENT" = "self-hosted" ]; then
-            npm publish ./pkg --access public --ignore-scripts
-          else
-            npm publish ./pkg --access public --provenance --ignore-scripts
-          fi
-
-      - name: Publish dry run
-        if: ${{ github.event.inputs.dry_run == 'true' }}
-        run: npm publish ./pkg --access public --dry-run --ignore-scripts
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-  publish-github:
-    needs: [test]
-    runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.DEFAULT_NODE_VERSION }}
-          package-manager-cache: false
-          registry-url: https://npm.pkg.github.com
-          scope: '@jesssullivan'
-
-      - name: Download Bazel package artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: bazel-pkg
-
-      - name: Extract Bazel package artifact
-        run: tar -xzf bazel-pkg.tgz
-
-      - name: Normalize Bazel package permissions
-        run: chmod -R u+w pkg
-
-      - name: Prepare GitHub Packages publish directory
-        run: |
-          cp -R pkg pkg-github
-          chmod -R u+w pkg-github
-
-      - name: Publish to GitHub Packages
-        if: ${{ github.event_name == 'release' || github.event.inputs.dry_run != 'true' }}
-        run: |
-          # Temporarily override scope for GH Packages (npm scope != GH owner)
-          node -e "
-            const pkg = require('./pkg-github/package.json');
-            pkg.name = '@jesssullivan/scheduling-kit';
-            pkg.publishConfig = { registry: 'https://npm.pkg.github.com' };
-            require('fs').writeFileSync('./pkg-github/package.json', JSON.stringify(pkg, null, 2) + '\n');
-          "
-          set +e
-          output=$(npm publish ./pkg-github --ignore-scripts 2>&1)
-          status=$?
-          set -e
-
-          echo "$output"
-
-          if [ "$status" -ne 0 ]; then
-            if echo "$output" | grep -q "Cannot publish over existing version"; then
-              echo "GitHub Packages already has this version; treating as success."
-              exit 0
-            fi
-            exit "$status"
-          fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish dry run
-        if: ${{ github.event.inputs.dry_run == 'true' }}
-        run: npm publish ./pkg-github --dry-run --ignore-scripts
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  package:
+    uses: tinyland-inc/ci-templates/.github/workflows/js-bazel-package.yml@dde8c378815e47aa027c163278430c0d98ae007b
+    with:
+      runner_labels_json: ${{ vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]' }}
+      node_versions: '["20", "22"]'
+      publish_node_version: "22"
+      pnpm_version: "9.15.9"
+      cleanup_paths: "pkg pkg-github dist node_modules .svelte-kit bazel-bin bazel-out bazel-testlogs bazel-scheduling-kit .pnpm-store bazel-pkg.tgz MODULE.bazel.lock"
+      prepare_command: pnpm exec svelte-kit sync
+      metadata_check_command: pnpm check:release-metadata
+      lint_command: pnpm lint
+      typecheck_command: pnpm check
+      unit_test_command: pnpm test:unit
+      integration_test_command: pnpm test:integration
+      build_command: pnpm build
+      package_check_command: pnpm check:package
+      bazel_targets: "//:typecheck //:pkg //:test"
+      package_dir: ./bazel-bin/pkg
+      npm_access: public
+      github_package_name: "@jesssullivan/scheduling-kit"
+      dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+    secrets: inherit

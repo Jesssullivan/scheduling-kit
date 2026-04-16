@@ -63,7 +63,6 @@ jobs:
 
       - name: Lint
         run: pnpm lint
-        continue-on-error: true
 
       - name: Unit tests
         run: pnpm test:unit
@@ -74,7 +73,7 @@ jobs:
       - name: Build package
         run: pnpm build
 
-  build:
+  package:
     runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]') }}
     needs: test
 
@@ -112,8 +111,35 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Sync SvelteKit
+        run: pnpm exec svelte-kit sync
+
       - name: Build
         run: pnpm build
 
       - name: Validate package
-        run: pnpm exec publint
+        run: pnpm check:package
+
+      - name: Validate Bazel package artifact
+        run: npx --yes @bazel/bazelisk build //:pkg
+
+      - name: Validate Bazel npm package contents
+        run: npm pack --dry-run ./bazel-bin/pkg
+
+      - name: Validate Bazel npm publish dry run
+        run: npm publish --dry-run --ignore-scripts --access public ./bazel-bin/pkg
+
+      - name: Prepare GitHub Packages publish directory
+        run: |
+          cp -R bazel-bin/pkg pkg-github
+          chmod -R u+w pkg-github
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('./pkg-github/package.json', 'utf8'));
+            pkg.name = '@jesssullivan/scheduling-kit';
+            pkg.publishConfig = { ...(pkg.publishConfig || {}), registry: 'https://npm.pkg.github.com' };
+            fs.writeFileSync('./pkg-github/package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+      - name: Validate GitHub Packages dry run
+        run: npm publish ./pkg-github --dry-run --ignore-scripts

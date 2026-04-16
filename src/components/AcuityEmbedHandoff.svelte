@@ -47,7 +47,7 @@
   } = $props();
 
   // State - dynamicHeight tracks both initial prop and postMessage updates
-  let dynamicHeight = $state(height);
+  let dynamicHeight = $state(600);
   let isLoading = $state(true);
   let iframeRef = $state<HTMLIFrameElement | null>(null);
 
