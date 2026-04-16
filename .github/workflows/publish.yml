@@ -136,7 +136,9 @@ jobs:
         run: tar -xzf bazel-pkg.tgz
 
       - name: Prepare GitHub Packages publish directory
-        run: cp -R pkg pkg-github
+        run: |
+          cp -R pkg pkg-github
+          chmod -R u+w pkg-github
 
       - name: Publish to GitHub Packages
         if: ${{ github.event_name == 'release' || github.event.inputs.dry_run != 'true' }}
