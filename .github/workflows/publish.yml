@@ -163,7 +163,20 @@ jobs:
             pkg.publishConfig = { registry: 'https://npm.pkg.github.com' };
             require('fs').writeFileSync('./pkg-github/package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
-          npm publish ./pkg-github --ignore-scripts
+          set +e
+          output=$(npm publish ./pkg-github --ignore-scripts 2>&1)
+          status=$?
+          set -e
+
+          echo "$output"
+
+          if [ "$status" -ne 0 ]; then
+            if echo "$output" | grep -q "Cannot publish over existing version"; then
+              echo "GitHub Packages already has this version; treating as success."
+              exit 0
+            fi
+            exit "$status"
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
