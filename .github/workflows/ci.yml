@@ -22,6 +22,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          clean: false
+
+      - name: Clean stale workspace artifacts
+        run: |
+          chmod -R u+w pkg pkg-github dist node_modules .svelte-kit bazel-bin bazel-out bazel-testlogs bazel-scheduling-kit .pnpm-store 2>/dev/null || true
+          rm -rf pkg pkg-github dist node_modules .svelte-kit bazel-bin bazel-out bazel-testlogs bazel-scheduling-kit .pnpm-store bazel-pkg.tgz MODULE.bazel.lock
 
       - uses: actions/setup-node@v6
         with:
@@ -73,6 +80,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          clean: false
+
+      - name: Clean stale workspace artifacts
+        run: |
+          chmod -R u+w pkg pkg-github dist node_modules .svelte-kit bazel-bin bazel-out bazel-testlogs bazel-scheduling-kit .pnpm-store 2>/dev/null || true
+          rm -rf pkg pkg-github dist node_modules .svelte-kit bazel-bin bazel-out bazel-testlogs bazel-scheduling-kit .pnpm-store bazel-pkg.tgz MODULE.bazel.lock
 
       - uses: actions/setup-node@v6
         with:
