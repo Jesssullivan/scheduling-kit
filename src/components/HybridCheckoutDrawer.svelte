@@ -7,7 +7,7 @@
    * 1. Custom UI for service/provider/datetime/client selection
    * 2. Payment method selection (Venmo, Card via Stripe)
    * 3. Collect payment via our own adapter
-   * 4. Book on Acuity at $0 via wizard automation
+   * 4. Hand booking off to adopter-provided completion logic
    */
   import type { Service, Provider, ClientInfo, TimeSlot, Booking, PaymentIntent, PaymentResult } from '../core/types.js';
   import type { AcuityBookingData } from '../lib/acuity-listener.js';
@@ -64,7 +64,7 @@
   }: {
     /** Whether drawer is open */
     open?: boolean;
-    /** Available services (from scraper or API) */
+    /** Available services from the adopter's scheduling source */
     services?: Service[];
     /** Available providers */
     providers?: Provider[];
