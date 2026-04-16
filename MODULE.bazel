@@ -22,7 +22,7 @@ Subpackage targets (finer-grained caching):
 
 module(
     name = "tummycrypt_scheduling_kit",
-    version = "0.7.1",
+    version = "0.7.2",
     compatibility_level = 1,
 )
 
