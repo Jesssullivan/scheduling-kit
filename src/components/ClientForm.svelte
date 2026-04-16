@@ -1,9 +1,8 @@
 <script lang="ts">
   /**
    * ClientForm Component
-   * Client information form with Zod validation
+   * Client information form with lightweight browser validation.
    */
-  import { z } from 'zod';
   import type { ClientInfo } from '../core/types.js';
 
   // Props
@@ -48,15 +47,6 @@
   // Validation errors
   let errors = $state<Record<string, string>>({});
 
-  // Validation schema
-  const ClientSchema = z.object({
-    firstName: z.string().min(1, 'First name is required'),
-    lastName: z.string().min(1, 'Last name is required'),
-    email: z.string().email('Please enter a valid email address'),
-    phone: z.string().optional().transform(val => val || undefined),
-    notes: z.string().optional().transform(val => val || undefined),
-  });
-
   // Format phone number as user types
   const formatPhone = (value: string): string => {
     // Remove non-digits
@@ -80,21 +70,22 @@
 
   // Validate form
   const validate = (): boolean => {
-    const result = ClientSchema.safeParse({
-      firstName,
-      lastName,
-      email,
-      phone,
-      notes,
-    });
-
     const newErrors: Record<string, string> = {};
+    const trimmedFirstName = firstName.trim();
+    const trimmedLastName = lastName.trim();
+    const trimmedEmail = email.trim();
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-    if (!result.success) {
-      for (const error of result.error.errors) {
-        const field = error.path[0] as string;
-        newErrors[field] = error.message;
-      }
+    if (!trimmedFirstName) {
+      newErrors.firstName = 'First name is required';
+    }
+
+    if (!trimmedLastName) {
+      newErrors.lastName = 'Last name is required';
+    }
+
+    if (!trimmedEmail || !emailPattern.test(trimmedEmail)) {
+      newErrors.email = 'Please enter a valid email address';
     }
 
     if (showIntakeFields) {

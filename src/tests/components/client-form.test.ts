@@ -5,19 +5,40 @@
  * functions here and test them in a Node environment.
  */
 import { describe, it, expect } from 'vitest';
-import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
 // Re-implemented pure logic from ClientForm.svelte
 // ---------------------------------------------------------------------------
 
-const ClientSchema = z.object({
-  firstName: z.string().min(1, 'First name is required'),
-  lastName: z.string().min(1, 'Last name is required'),
-  email: z.string().email('Please enter a valid email address'),
-  phone: z.string().optional().transform((val) => val || undefined),
-  notes: z.string().optional().transform((val) => val || undefined),
-});
+interface ClientFields {
+  firstName: string;
+  lastName: string;
+  email: string;
+}
+
+const validateClientFields = (
+  fields: Partial<ClientFields>,
+): Record<string, string> => {
+  const errors: Record<string, string> = {};
+  const trimmedFirstName = fields.firstName?.trim() ?? '';
+  const trimmedLastName = fields.lastName?.trim() ?? '';
+  const trimmedEmail = fields.email?.trim() ?? '';
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  if (!trimmedFirstName) {
+    errors.firstName = 'First name is required';
+  }
+
+  if (!trimmedLastName) {
+    errors.lastName = 'Last name is required';
+  }
+
+  if (!trimmedEmail || !emailPattern.test(trimmedEmail)) {
+    errors.email = 'Please enter a valid email address';
+  }
+
+  return errors;
+};
 
 const formatPhone = (value: string): string => {
   const digits = value.replace(/\D/g, '');
@@ -73,137 +94,90 @@ interface ClientInfo {
 
 describe('ClientForm validation logic', () => {
   // -----------------------------------------------------------------------
-  // ClientSchema
+  // validateClientFields
   // -----------------------------------------------------------------------
-  describe('ClientSchema', () => {
+  describe('validateClientFields', () => {
     const validData = {
       firstName: 'Jane',
       lastName: 'Doe',
       email: 'jane@example.com',
-      phone: '6071234567',
-      notes: 'Jaw pain on left side',
     };
 
     it('accepts fully valid data', () => {
-      const result = ClientSchema.safeParse(validData);
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.firstName).toBe('Jane');
-        expect(result.data.lastName).toBe('Doe');
-        expect(result.data.email).toBe('jane@example.com');
-      }
-    });
-
-    it('accepts data without optional phone and notes', () => {
-      const result = ClientSchema.safeParse({
-        firstName: 'Jane',
-        lastName: 'Doe',
-        email: 'jane@example.com',
-      });
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.phone).toBeUndefined();
-        expect(result.data.notes).toBeUndefined();
-      }
-    });
-
-    it('transforms empty phone string to undefined', () => {
-      const result = ClientSchema.safeParse({
-        ...validData,
-        phone: '',
-      });
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.phone).toBeUndefined();
-      }
-    });
-
-    it('transforms empty notes string to undefined', () => {
-      const result = ClientSchema.safeParse({
-        ...validData,
-        notes: '',
-      });
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.notes).toBeUndefined();
-      }
+      expect(validateClientFields(validData)).toEqual({});
     });
 
     it('rejects missing firstName', () => {
-      const result = ClientSchema.safeParse({
+      expect(validateClientFields({
         lastName: 'Doe',
         email: 'jane@example.com',
+      })).toMatchObject({
+        firstName: 'First name is required',
       });
-      expect(result.success).toBe(false);
     });
 
     it('rejects empty firstName', () => {
-      const result = ClientSchema.safeParse({
+      expect(validateClientFields({
         firstName: '',
         lastName: 'Doe',
         email: 'jane@example.com',
+      })).toMatchObject({
+        firstName: 'First name is required',
       });
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        const firstNameIssue = result.error.issues.find(
-          (i) => i.path[0] === 'firstName',
-        );
-        expect(firstNameIssue?.message).toBe('First name is required');
-      }
     });
 
     it('rejects missing lastName', () => {
-      const result = ClientSchema.safeParse({
+      expect(validateClientFields({
         firstName: 'Jane',
         email: 'jane@example.com',
+      })).toMatchObject({
+        lastName: 'Last name is required',
       });
-      expect(result.success).toBe(false);
     });
 
     it('rejects empty lastName', () => {
-      const result = ClientSchema.safeParse({
+      expect(validateClientFields({
         firstName: 'Jane',
         lastName: '',
         email: 'jane@example.com',
+      })).toMatchObject({
+        lastName: 'Last name is required',
       });
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        const lastNameIssue = result.error.issues.find(
-          (i) => i.path[0] === 'lastName',
-        );
-        expect(lastNameIssue?.message).toBe('Last name is required');
-      }
     });
 
     it('rejects invalid email', () => {
-      const result = ClientSchema.safeParse({
+      expect(validateClientFields({
         firstName: 'Jane',
         lastName: 'Doe',
         email: 'not-an-email',
+      })).toMatchObject({
+        email: 'Please enter a valid email address',
       });
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        const emailIssue = result.error.issues.find(
-          (i) => i.path[0] === 'email',
-        );
-        expect(emailIssue?.message).toBe('Please enter a valid email address');
-      }
     });
 
     it('rejects missing email', () => {
-      const result = ClientSchema.safeParse({
+      expect(validateClientFields({
         firstName: 'Jane',
         lastName: 'Doe',
+      })).toMatchObject({
+        email: 'Please enter a valid email address',
       });
-      expect(result.success).toBe(false);
     });
 
-    it('rejects completely empty object', () => {
-      const result = ClientSchema.safeParse({});
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.issues.length).toBeGreaterThanOrEqual(3);
-      }
+    it('rejects completely empty object with all required errors', () => {
+      expect(validateClientFields({})).toEqual({
+        firstName: 'First name is required',
+        lastName: 'Last name is required',
+        email: 'Please enter a valid email address',
+      });
+    });
+
+    it('accepts surrounding whitespace when the trimmed values are valid', () => {
+      expect(validateClientFields({
+        firstName: ' Jane ',
+        lastName: ' Doe ',
+        email: ' jane@example.com ',
+      })).toEqual({});
     });
   });
 
@@ -369,26 +343,19 @@ describe('ClientForm validation logic', () => {
       expect(info.customFields?.['field-16606770']).toBe('Ibuprofen 200mg');
     });
 
-    it('constructs ClientInfo from validated schema output', () => {
-      const parsed = ClientSchema.parse({
-        firstName: 'Jane',
-        lastName: 'Doe',
-        email: 'jane@example.com',
-        phone: '6072014926',
-        notes: '',
-      });
-
+    it('constructs ClientInfo from valid component field state', () => {
       const info: ClientInfo = {
-        firstName: parsed.firstName,
-        lastName: parsed.lastName,
-        email: parsed.email,
-        phone: parsed.phone,
-        notes: parsed.notes,
+        firstName: ' Jane '.trim(),
+        lastName: ' Doe '.trim(),
+        email: ' Jane@Example.com '.trim().toLowerCase(),
+        phone: '(607) 201-4926'.replace(/\D/g, '') || undefined,
+        notes: ''.trim() || undefined,
       };
 
       expect(info.firstName).toBe('Jane');
+      expect(info.lastName).toBe('Doe');
+      expect(info.email).toBe('jane@example.com');
       expect(info.phone).toBe('6072014926');
-      // notes was empty string, transformed to undefined by schema
       expect(info.notes).toBeUndefined();
     });
   });
