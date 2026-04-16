@@ -13,18 +13,25 @@ import {
 } from '../payments/manual.js';
 import type { PaymentAdapter } from '../payments/types.js';
 
+const createNamedManualAdapter = (
+  name = 'test',
+  displayName = 'Test',
+  instructions = `${displayName} instructions`
+) =>
+  createManualPaymentAdapter(
+    {
+      type: 'manual',
+      methods: ['other'],
+      instructions: { other: instructions },
+    },
+    name,
+    displayName
+  );
+
 describe('Manual Payment Adapters', () => {
   describe('createManualPaymentAdapter', () => {
     it('creates adapter with custom config', () => {
-      const adapter = createManualPaymentAdapter(
-        {
-          type: 'manual',
-          methods: ['custom'],
-          instructions: { custom: 'Custom instructions' },
-        },
-        'custom',
-        'Custom Payment'
-      );
+      const adapter = createNamedManualAdapter('custom', 'Custom Payment', 'Custom instructions');
 
       expect(adapter.name).toBe('custom');
       expect(adapter.displayName).toBe('Custom Payment');
@@ -32,11 +39,7 @@ describe('Manual Payment Adapters', () => {
 
     describe('createIntent', () => {
       it('creates payment intent with correct structure', async () => {
-        const adapter = createManualPaymentAdapter(
-          { type: 'manual', methods: ['test'] },
-          'test',
-          'Test'
-        );
+        const adapter = createNamedManualAdapter();
 
         const intent = await Effect.runPromise(
           adapter.createIntent({
@@ -55,11 +58,7 @@ describe('Manual Payment Adapters', () => {
       });
 
       it('generates unique intent IDs', async () => {
-        const adapter = createManualPaymentAdapter(
-          { type: 'manual', methods: ['test'] },
-          'test',
-          'Test'
-        );
+        const adapter = createNamedManualAdapter();
 
         const ids = new Set<string>();
         for (let i = 0; i < 100; i++) {
@@ -67,6 +66,7 @@ describe('Manual Payment Adapters', () => {
             adapter.createIntent({
               amount: 1000,
               currency: 'USD',
+              description: `Test payment ${i}`,
               idempotencyKey: `idem_${i}`,
             })
           );
@@ -79,11 +79,7 @@ describe('Manual Payment Adapters', () => {
 
     describe('capturePayment', () => {
       it('returns captured payment result', async () => {
-        const adapter = createManualPaymentAdapter(
-          { type: 'manual', methods: ['test'] },
-          'test',
-          'Test'
-        );
+        const adapter = createNamedManualAdapter();
 
         const payment = await Effect.runPromise(adapter.capturePayment('manual_123'));
 
@@ -95,11 +91,7 @@ describe('Manual Payment Adapters', () => {
 
     describe('refund', () => {
       it('creates refund record', async () => {
-        const adapter = createManualPaymentAdapter(
-          { type: 'manual', methods: ['test'] },
-          'test',
-          'Test'
-        );
+        const adapter = createNamedManualAdapter();
 
         const refund = await Effect.runPromise(
           adapter.refund({
@@ -199,11 +191,7 @@ describe('Payment Adapter Interface Compliance', () => {
     { name: 'check', adapter: createCheckAdapter('Test Business') },
     {
       name: 'custom',
-      adapter: createManualPaymentAdapter(
-        { type: 'manual', methods: ['custom'] },
-        'custom',
-        'Custom'
-      ),
+      adapter: createNamedManualAdapter('custom', 'Custom', 'Custom instructions'),
     },
   ];
 
@@ -247,7 +235,7 @@ describe('Payment Adapter Interface Compliance', () => {
 
 describe('Property-based Payment Tests', () => {
   const adapter = createManualPaymentAdapter(
-    { type: 'manual', methods: ['test'] },
+    { type: 'manual', methods: ['other'], instructions: { other: 'Test instructions' } },
     'test',
     'Test'
   );
@@ -262,6 +250,7 @@ describe('Property-based Payment Tests', () => {
               adapter.createIntent({
                 amount,
                 currency: 'USD',
+                description: `Property test payment ${amount}`,
                 idempotencyKey: `idem_${amount}_${Date.now()}`,
               })
             );
@@ -284,6 +273,7 @@ describe('Property-based Payment Tests', () => {
               adapter.createIntent({
                 amount: 1000,
                 currency,
+                description: `Currency test payment ${currency}`,
                 idempotencyKey: `idem_${currency}_${Date.now()}`,
               })
             );
@@ -326,6 +316,7 @@ describe('Payment Flow Integration', () => {
       adapter.createIntent({
         amount: 10000,
         currency: 'USD',
+        description: 'Refund test payment',
         idempotencyKey: 'idem_refund_test',
       })
     );
