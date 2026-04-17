@@ -13,13 +13,15 @@ on:
 
 jobs:
   package:
-    uses: tinyland-inc/ci-templates/.github/workflows/js-bazel-package.yml@dde8c378815e47aa027c163278430c0d98ae007b
+    uses: tinyland-inc/ci-templates/.github/workflows/js-bazel-package.yml@0e13cc4e50b191f48191f08b3db081307d3447ce
     with:
-      runner_labels_json: ${{ vars.PRIMARY_LINUX_RUNNER_LABELS_JSON || '["ubuntu-latest"]' }}
+      runner_mode: repo_owned
+      runner_labels_json: ${{ vars.PRIMARY_LINUX_RUNNER_LABELS_JSON }}
+      workspace_mode: isolated
+      publish_mode: same_runner
       node_versions: '["20", "22"]'
       publish_node_version: "22"
       pnpm_version: "9.15.9"
-      cleanup_paths: "pkg pkg-github dist node_modules .svelte-kit bazel-bin bazel-out bazel-testlogs bazel-scheduling-kit .pnpm-store bazel-pkg.tgz MODULE.bazel.lock"
       prepare_command: pnpm exec svelte-kit sync
       metadata_check_command: pnpm check:release-metadata
       lint_command: pnpm lint
