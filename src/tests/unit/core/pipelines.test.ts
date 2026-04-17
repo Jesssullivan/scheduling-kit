@@ -106,9 +106,11 @@ const createMockPaymentAdapter = (name = 'cash'): PaymentAdapter => ({
     })
   ),
   getClientConfig: () => ({
-    enabled: true,
-    displayName: 'Cash',
-    instructions: 'Pay in cash at appointment',
+    name,
+    displayName: name === 'stripe' ? 'Credit/Debit Card' : `Pay with ${name}`,
+    icon: name === 'stripe' ? 'stripe' : name,
+    environment: 'production' as const,
+    supportedCurrencies: ['USD'],
   }),
 });
 
@@ -481,6 +483,37 @@ describe('createSchedulingKit', () => {
     expect(kit.payments.get('venmo')).toBeDefined();
     expect(kit.payments.get('zelle')).toBeDefined();
     expect(kit.payments.getAll().length).toBe(3);
+  });
+
+  it('aliases stripe adapters behind the public card id', async () => {
+    const stripe = createMockPaymentAdapter('stripe');
+    const kit = createSchedulingKit(scheduler, [stripe]);
+
+    expect(kit.payments.get('stripe')).toBe(stripe);
+    expect(kit.payments.get('card')).toBe(stripe);
+
+    const methods = await kit.payments.getAvailableMethods();
+    expect(methods).toEqual([
+      expect.objectContaining({
+        id: 'card',
+        name: 'card',
+        displayName: 'Credit/Debit Card',
+        icon: 'card',
+      }),
+    ]);
+  });
+
+  it('completeBooking accepts the public card id for stripe-backed flows', async () => {
+    const stripe = createMockPaymentAdapter('stripe');
+    const kit = createSchedulingKit(scheduler, [stripe]);
+
+    const result = await expectSuccess(
+      kit.completeBooking(createBookingRequest(), 'card')
+    );
+
+    expect(result.booking).toBeDefined();
+    expect(stripe.createIntent).toHaveBeenCalled();
+    expect(stripe.capturePayment).toHaveBeenCalled();
   });
 
   it('completeBooking delegates to pipeline', async () => {

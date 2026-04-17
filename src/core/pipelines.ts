@@ -18,7 +18,7 @@ import { Errors } from './types.js';
 import { validateWith, generateIdempotencyKey, withCorrelationId } from './utils.js';
 import type { SchedulingAdapter } from '../adapters/types.js';
 import type { PaymentAdapter, PaymentRegistry as CanonicalPaymentRegistry } from '../payments/types.js';
-import { createPaymentRegistry } from '../payments/types.js';
+import { createPaymentRegistry, toPublicPaymentMethodId } from '../payments/types.js';
 import { z } from 'zod';
 
 // =============================================================================
@@ -344,6 +344,7 @@ export const createSchedulingKit = (
   const payments = new Map<string, PaymentAdapter>();
   for (const a of registry.getAll()) {
     payments.set(a.name, a);
+    payments.set(toPublicPaymentMethodId(a.name), a);
   }
 
   return {

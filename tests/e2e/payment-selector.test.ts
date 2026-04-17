@@ -24,12 +24,12 @@ const createMockPaymentMethods = () => [
     icon: 'cash',
   },
   {
-    id: 'stripe',
-    displayName: 'Credit Card',
+    id: 'card',
+    displayName: 'Credit/Debit Card',
     description: 'Pay with card',
     available: true,
     processingFeePercent: 2.9,
-    icon: 'stripe',
+    icon: 'card',
   },
   {
     id: 'disabled',
@@ -57,7 +57,7 @@ describe('PaymentSelector Component', () => {
 
     expect(screen.getByText('Venmo')).toBeInTheDocument();
     expect(screen.getByText('Cash')).toBeInTheDocument();
-    expect(screen.getByText('Credit Card')).toBeInTheDocument();
+    expect(screen.getByText('Credit/Debit Card')).toBeInTheDocument();
   });
 
   it('shows loading state', () => {

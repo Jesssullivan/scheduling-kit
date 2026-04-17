@@ -36,6 +36,7 @@
   const getIcon = (method: PaymentMethodOption): string => {
     const icons: Record<string, string> = {
       venmo: '💙',
+      card: '💳',
       stripe: '💳',
       cash: '💵',
       zelle: '⚡',

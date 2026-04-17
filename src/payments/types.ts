@@ -243,6 +243,25 @@ export const getDefaultCapabilities = (): PaymentCapabilities => ({
   cash: false,
 });
 
+export const toPublicPaymentMethodId = (paymentMethod: string): string =>
+  paymentMethod === 'stripe' ? 'card' : paymentMethod;
+
+export const toInternalPaymentMethodId = (paymentMethod: string): string =>
+  paymentMethod === 'card' ? 'stripe' : paymentMethod;
+
+export const toPublicPaymentMethodOption = (adapter: PaymentAdapter): PaymentMethodOption => {
+  const config = adapter.getClientConfig();
+  const publicId = toPublicPaymentMethodId(adapter.name);
+
+  return {
+    id: publicId,
+    name: publicId,
+    displayName: config.displayName,
+    icon: publicId === 'card' ? 'card' : config.icon,
+    available: true,
+  };
+};
+
 export const createPaymentRegistry = (): PaymentRegistry => {
   const adapters = new Map<string, PaymentAdapter>();
 
@@ -251,7 +270,7 @@ export const createPaymentRegistry = (): PaymentRegistry => {
       adapters.set(adapter.name, adapter);
     },
 
-    get: (name) => adapters.get(name),
+    get: (name) => adapters.get(name) ?? adapters.get(toInternalPaymentMethodId(name)),
 
     getAll: () => Array.from(adapters.values()),
 
@@ -262,14 +281,7 @@ export const createPaymentRegistry = (): PaymentRegistry => {
         try {
           const available = await Effect.runPromise(adapter.isAvailable());
           if (available) {
-            const config = adapter.getClientConfig();
-            methods.push({
-              id: adapter.name,
-              name: adapter.name,
-              displayName: config.displayName,
-              icon: config.icon,
-              available: true,
-            });
+            methods.push(toPublicPaymentMethodOption(adapter));
           }
         } catch {
           // Adapter unavailable — skip
