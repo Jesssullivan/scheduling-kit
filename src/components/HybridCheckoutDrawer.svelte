@@ -690,7 +690,7 @@
 </Dialog>
 
 <style>
-  .modal-panel {
+  :global(.modal-panel) {
     animation: modalIn 0.25s ease-out;
   }
 
@@ -699,7 +699,7 @@
     to { opacity: 1; transform: scale(1) translateY(0); }
   }
 
-  .modal-backdrop {
+  :global(.modal-backdrop) {
     animation: fadeIn 0.2s ease-out;
   }
 

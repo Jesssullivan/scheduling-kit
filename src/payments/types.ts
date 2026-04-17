@@ -117,6 +117,7 @@ export interface PaymentClientConfig {
   readonly supportedCurrencies: string[];
   readonly minAmount?: number;
   readonly maxAmount?: number;
+  readonly instructions?: Record<string, string>;
 }
 
 // =============================================================================

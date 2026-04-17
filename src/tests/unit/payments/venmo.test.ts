@@ -30,6 +30,7 @@ describe('Venmo Adapter', () => {
 
   beforeAll(() => {
     adapter = createVenmoAdapter({
+      type: 'venmo',
       clientId: 'test-client-id',
       clientSecret: 'test-client-secret',
       environment: 'sandbox',
@@ -296,6 +297,7 @@ describe('Venmo Adapter Transformers', () => {
 
   beforeAll(() => {
     adapter = createVenmoAdapter({
+      type: 'venmo',
       clientId: 'test-client-id',
       clientSecret: 'test-client-secret',
       environment: 'sandbox',
