@@ -101,6 +101,53 @@ const createMockDb = (responses: { select?: MockRow[]; insert?: MockRow[]; updat
   return db;
 };
 
+/**
+ * Sequenced mock DB — returns different rows for successive select/insert calls.
+ * Used for multi-step methods like createBooking and getBooking which make
+ * multiple sequential DB queries against different tables.
+ */
+const createSequencedMockDb = (
+  selectSequence: MockRow[][],
+  insertSequence: MockRow[][] = [],
+) => {
+  let selectCall = 0;
+  let insertCall = 0;
+
+  const makeSelectChain = () => {
+    const rows = selectSequence[selectCall] ?? [];
+    selectCall++;
+    const terminals = {
+      limit: vi.fn().mockResolvedValue(rows),
+      orderBy: vi.fn().mockResolvedValue(rows),
+    };
+    return {
+      where: vi.fn().mockReturnValue(terminals),
+      orderBy: terminals.orderBy,
+      limit: terminals.limit,
+    };
+  };
+
+  const makeInsertChain = () => {
+    const rows = insertSequence[insertCall] ?? [];
+    insertCall++;
+    return {
+      values: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue(rows),
+      }),
+    };
+  };
+
+  return {
+    select: vi.fn().mockImplementation(() => ({ from: vi.fn().mockImplementation(makeSelectChain) })),
+    insert: vi.fn().mockImplementation(makeInsertChain),
+    update: vi.fn().mockReturnValue({
+      set: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(undefined),
+      }),
+    }),
+  };
+};
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
@@ -552,6 +599,178 @@ describe('HomegrownAdapter', () => {
       await expect(
         Effect.runPromise(adapter.cancelBooking('booking-uuid-1')),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Bookings — multi-step (sequenced mock)
+  // -------------------------------------------------------------------------
+
+  describe('createBooking', () => {
+    it('resolves service, finds client, gets practitioner, inserts booking', async () => {
+      // createBooking internally calls:
+      //   1. resolveService (select)
+      //   2. findOrCreateClient → find by email (select) → update if exists
+      //   3. getDefaultPractitioner (select)
+      //   4. insert booking
+      const mockDb = createSequencedMockDb(
+        [
+          [SERVICE_ROW],       // resolveService
+          [CLIENT_ROW],        // findOrCreateClient email lookup
+          [PRACTITIONER_ROW],  // getDefaultPractitioner
+        ],
+        [
+          [BOOKING_ROW],       // insert booking
+        ],
+      );
+
+      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const result = await Effect.runPromise(adapter.createBooking({
+        serviceId: 'svc-uuid-1',
+        datetime: '2026-04-20T14:00:00.000Z',
+        client: TEST_CLIENT,
+        idempotencyKey: 'idem-001',
+      }));
+
+      expect(result.id).toBe('booking-uuid-1');
+      expect(result.serviceId).toBe('svc-uuid-1');
+      expect(result.serviceName).toBe('Deep Tissue Massage');
+      expect(result.confirmationCode).toBe('ABC123');
+      expect(result.status).toBe('confirmed');
+      expect(result.paymentStatus).toBe('pending');
+      expect(result.client).toEqual(TEST_CLIENT);
+    });
+
+    it('fails when service not found during booking', async () => {
+      const mockDb = createSequencedMockDb([
+        [],  // resolveService returns empty
+      ]);
+
+      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const exit = await Effect.runPromiseExit(adapter.createBooking({
+        serviceId: 'nonexistent',
+        datetime: '2026-04-20T14:00:00.000Z',
+        client: TEST_CLIENT,
+        idempotencyKey: 'idem-002',
+      }));
+
+      expect(exit._tag).toBe('Failure');
+    });
+
+    it('creates new client when email not found during booking', async () => {
+      const mockDb = createSequencedMockDb(
+        [
+          [SERVICE_ROW],       // resolveService
+          [],                  // findOrCreateClient: email not found
+          [PRACTITIONER_ROW],  // getDefaultPractitioner
+        ],
+        [
+          [{ id: 'client-uuid-new' }],  // insert client
+          [BOOKING_ROW],                 // insert booking
+        ],
+      );
+
+      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const result = await Effect.runPromise(adapter.createBooking({
+        serviceId: 'svc-uuid-1',
+        datetime: '2026-04-20T14:00:00.000Z',
+        client: TEST_CLIENT,
+        idempotencyKey: 'idem-003',
+      }));
+
+      expect(result.id).toBe('booking-uuid-1');
+    });
+  });
+
+  describe('getBooking', () => {
+    it('joins booking, service, client, and practitioner data', async () => {
+      // getBooking does 4 sequential selects:
+      //   1. booking by ID
+      //   2. service by booking.serviceId
+      //   3. client by booking.clientId
+      //   4. practitioner by booking.practitionerId (conditional)
+      const mockDb = createSequencedMockDb([
+        [BOOKING_ROW],        // booking
+        [SERVICE_ROW],        // service
+        [CLIENT_ROW],         // client
+        [PRACTITIONER_ROW],   // practitioner
+      ]);
+
+      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const result = await Effect.runPromise(adapter.getBooking('booking-uuid-1'));
+
+      expect(result.id).toBe('booking-uuid-1');
+      expect(result.serviceName).toBe('Deep Tissue Massage');
+      expect(result.providerName).toBe('Jen Sullivan');
+      expect(result.client.firstName).toBe('Alice');
+      expect(result.client.email).toBe('alice@example.com');
+      expect(result.duration).toBe(60);
+      expect(result.price).toBe(9500);
+      expect(result.currency).toBe('USD');
+    });
+
+    it('fails when booking not found', async () => {
+      const mockDb = createSequencedMockDb([
+        [],  // booking not found
+      ]);
+
+      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const exit = await Effect.runPromiseExit(adapter.getBooking('nonexistent'));
+
+      expect(exit._tag).toBe('Failure');
+    });
+
+    it('handles missing service gracefully', async () => {
+      const mockDb = createSequencedMockDb([
+        [BOOKING_ROW],  // booking exists
+        [],              // service not found
+        [CLIENT_ROW],   // client
+      ]);
+
+      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const result = await Effect.runPromise(adapter.getBooking('booking-uuid-1'));
+
+      // Falls back to 'Unknown' for service name, 'USD' for currency
+      expect(result.serviceName).toBe('Unknown');
+      expect(result.currency).toBe('USD');
+    });
+  });
+
+  describe('rescheduleBooking', () => {
+    it('updates datetime and returns refreshed booking', async () => {
+      // rescheduleBooking:
+      //   1. select existing booking
+      //   2. update with new datetime/endTime
+      //   3. calls getBooking internally (4 more selects)
+      const mockDb = createSequencedMockDb([
+        [BOOKING_ROW],        // 1. select existing
+        // getBooking selects (called via adapter.getBooking):
+        [{ ...BOOKING_ROW, datetime: '2026-04-21T10:00:00.000Z', endTime: '2026-04-21T11:00:00.000Z' }],
+        [SERVICE_ROW],
+        [CLIENT_ROW],
+        [PRACTITIONER_ROW],
+      ]);
+
+      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const result = await Effect.runPromise(
+        adapter.rescheduleBooking('booking-uuid-1', '2026-04-21T10:00:00.000Z'),
+      );
+
+      expect(result.id).toBe('booking-uuid-1');
+      expect(result.datetime).toBe('2026-04-21T10:00:00.000Z');
+    });
+
+    it('fails when booking not found', async () => {
+      const mockDb = createSequencedMockDb([
+        [],  // existing booking not found
+      ]);
+
+      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const exit = await Effect.runPromiseExit(
+        adapter.rescheduleBooking('nonexistent', '2026-04-21T10:00:00.000Z'),
+      );
+
+      expect(exit._tag).toBe('Failure');
     });
   });
 
