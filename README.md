@@ -73,8 +73,8 @@ Longer term, the intended publish shape is:
 
 ## Runner Authority
 
-Canonical package CI and publish now run on a repo-owned GloriousFlywheel lane.
-The current proven workflow contract is the plain repo label
+Canonical GitHub Actions package CI and publish now run on the repo-owned
+GloriousFlywheel self-hosted runner lane with the plain repo label
 `["scheduling-kit"]`.
 
 Treat that label as the active truth surface for package authority. Do not
