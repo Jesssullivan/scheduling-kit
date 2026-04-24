@@ -1,17 +1,24 @@
 # @tummycrypt/scheduling-kit
 
-Backend-agnostic scheduling system with Svelte 5 components, multiple scheduling adapters, and alternative payment support. Built with Effect for typed workflows and Zod for runtime validation.
+Backend-agnostic scheduling system with Svelte 5 components, multiple
+scheduling adapters, and alternative payment support. Built with Effect for
+typed workflows and Zod for runtime validation.
 
-Docs, prebuilts, packages and blog post to come later.  Another tinyland artifact it is time to publish.  This package powers scheduling transactions for small buisnesses in the eastern US for whom I've done contracting work. 
+Docs, prebuilts, packages and blog post to come later. Another tinyland
+artifact it is time to publish. This package powers scheduling transactions
+for small buisnesses in the eastern US for whom I've done contracting work.
 
 ## Features
 
-- **Multiple scheduling backends** -- Acuity REST API, Cal.com, or bring-your-own PostgreSQL (HomegrownAdapter)
-- **Svelte 5 components** -- ServicePicker, DateTimePicker, ClientForm, CheckoutDrawer, and more
+- **Multiple scheduling backends** -- Acuity REST API, Cal.com, or
+  bring-your-own PostgreSQL (HomegrownAdapter)
+- **Svelte 5 components** -- ServicePicker, DateTimePicker, ClientForm,
+  CheckoutDrawer, and more
 - **Payment adapters** -- Stripe, Venmo/PayPal SDK, cash, Zelle, check
 - **Availability engine** -- Pure-function slot generation, DST-safe via `Intl.DateTimeFormat`
 - **Reconciliation** -- Alt-payment matching and webhook handling
-- **Test infrastructure** -- Cassette-based API recording/playback, MSW mocking, property-based tests
+- **Test infrastructure** -- Cassette-based API recording/playback, MSW
+  mocking, property-based tests
 - **Functional core** -- Effect-powered scheduling flows and typed error handling
 
 ## Installation
@@ -63,6 +70,16 @@ Longer term, the intended publish shape is:
 2. Bazel validates/builds the publishable artifact
 3. GitHub Actions publishes that artifact to npm
 4. downstream apps consume the published package only
+
+## Runner Authority
+
+Canonical GitHub Actions package CI and publish now run on the repo-owned
+GloriousFlywheel self-hosted runner lane with the plain repo label
+`["scheduling-kit"]`.
+
+Treat that label as the active truth surface for package authority. Do not
+describe broader repo-owned self-hosted label arrays as live contract unless
+they are reproven from current runs.
 
 ## Quick Start
 
@@ -124,7 +141,8 @@ adopter app that wires the handoff.
 
 ### HomegrownAdapter
 
-Direct PostgreSQL adapter using Drizzle ORM. Replaces third-party scheduling APIs entirely.
+Direct PostgreSQL adapter using Drizzle ORM. Replaces third-party scheduling
+APIs entirely.
 
 ```typescript
 import { createHomegrownAdapter } from '@tummycrypt/scheduling-kit/adapters';
@@ -134,13 +152,15 @@ const adapter = createHomegrownAdapter({
   timezone: 'America/New_York',
 });
 
-// 16 methods: getServices, getAvailability, getSlots, book, cancel, reschedule, ...
+// 16 methods: getServices, getAvailability, getSlots, book, cancel,
+// reschedule, ...
 ```
 
 ### AcuityAdapter
 
 API-based adapter for Acuity Scheduling (requires Powerhouse plan).
-For browser automation and no-API migration flows, use `@tummycrypt/scheduling-bridge`.
+For browser automation and no-API migration flows, use
+`@tummycrypt/scheduling-bridge`.
 
 ```typescript
 import { createAcuityAdapter } from '@tummycrypt/scheduling-kit/adapters';
@@ -195,7 +215,7 @@ const slots = getAvailableSlots({
 Svelte 5 components using runes syntax. Optional Skeleton 4 integration for styling.
 
 | Component | Description |
-|-----------|-------------|
+| ----------- | ----------- |
 | `ServicePicker` | Service/appointment type selector |
 | `DateTimePicker` | Calendar date + time slot picker |
 | `ClientForm` | Client info form with Zod validation |
@@ -203,15 +223,19 @@ Svelte 5 components using runes syntax. Optional Skeleton 4 integration for styl
 | `ProviderPicker` | Practitioner/provider selector |
 | `BookingConfirmation` | Post-booking confirmation display |
 | `CheckoutDrawer` | Full checkout flow in a slide-out drawer |
-| `HybridCheckoutDrawer` | Checkout UI that hands booking off to adopter-provided Acuity flow |
+| `HybridCheckoutDrawer` | Checkout UI for adopter-provided Acuity handoff |
 | `VenmoButton` | Venmo/PayPal payment button |
 | `VenmoCheckout` | Full Venmo checkout flow |
 | `StripeCheckout` | Stripe Elements checkout |
-| `AcuityEmbedHandoff` | Prefilled Acuity iframe primitive with postMessage integration |
+| `AcuityEmbedHandoff` | Prefilled Acuity iframe handoff with postMessage |
 
 ```svelte
 <script lang="ts">
-  import { ServicePicker, DateTimePicker, ClientForm } from '@tummycrypt/scheduling-kit/components';
+  import {
+    ServicePicker,
+    DateTimePicker,
+    ClientForm,
+  } from '@tummycrypt/scheduling-kit/components';
 </script>
 
 <ServicePicker services={data.services} onselect={handleSelect} />
@@ -233,7 +257,7 @@ import {
 ```
 
 | Adapter | Type | Description |
-|---------|------|-------------|
+| --------- | ------ | ------------- |
 | `createStripeAdapter` | `stripe` | Stripe Connect with Payment Intents |
 | `createVenmoAdapter` | `venmo` | PayPal SDK with Venmo button |
 | `createCashAdapter` | `cash` | Cash/in-person manual payment |
@@ -246,7 +270,9 @@ import {
 Match alt-payment transactions (Venmo, Zelle, cash) to bookings.
 
 ```typescript
-import { createReconciliationMatcher } from '@tummycrypt/scheduling-kit/reconciliation';
+import {
+  createReconciliationMatcher,
+} from '@tummycrypt/scheduling-kit/reconciliation';
 ```
 
 ## Stores
@@ -293,7 +319,8 @@ RUN_LIVE_TESTS=true pnpm test:live
 
 ### Test Utilities
 
-The `@tummycrypt/scheduling-kit/testing` export provides cassette-based API recording and playback for deterministic integration tests.
+The `@tummycrypt/scheduling-kit/testing` export provides cassette-based API
+recording and playback for deterministic integration tests.
 
 ```typescript
 import { CassetteRecorder, CassettePlayer } from '@tummycrypt/scheduling-kit/testing';

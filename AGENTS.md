@@ -22,11 +22,13 @@ It should **not** own:
 - Acuity browser automation infrastructure
 - Modal deployment control
 
-For browser automation and remote Acuity scraping, use `@tummycrypt/scheduling-bridge`.
+For browser automation and remote Acuity scraping, use
+`@tummycrypt/scheduling-bridge`.
 
 ## Strategic Goal
 
-This package is the reusable migration layer for businesses moving away from Acuity, GlossGenius, and similar closed platforms toward a controlled path:
+This package is the reusable migration layer for businesses moving away from
+Acuity, GlossGenius, and similar closed platforms toward a controlled path:
 
 1. keep the live business running
 2. introduce a middleware-backed off-ramp
@@ -124,7 +126,9 @@ Primary checks:
 - `pnpm build`
 - `publint`
 
-Typecheck/lint may be tolerated temporarily in CI if they are marked `continue-on-error`, but that should not be treated as a steady-state quality bar.
+Typecheck/lint may be tolerated temporarily in CI if they are marked
+`continue-on-error`, but that should not be treated as a steady-state quality
+bar.
 
 ### Publishing
 
@@ -133,11 +137,20 @@ Current publish flows target:
 - npmjs as `@tummycrypt/scheduling-kit`
 - GitHub Packages as `@jesssullivan/scheduling-kit`
 
-That GitHub Packages rename is operationally real. Do not break it accidentally when editing the publish flow.
+That GitHub Packages rename is operationally real. Do not break it
+accidentally when editing the publish flow.
 
 Release/publish changes should be made against the functional release line
 first, then ported deliberately into the mirror when needed. Do not split
 package truth across both remotes by accident.
+
+Current Phase 2 runner truth:
+
+- canonical package CI/publish authority is repo-owned on GloriousFlywheel
+- the current proven runner contract is the plain repo label
+  `["scheduling-kit"]`
+- do not describe richer repo-owned self-hosted label arrays as current truth
+  unless the live workflow contract is explicitly reproven
 
 ## Effect / Architecture Notes
 
@@ -150,7 +163,8 @@ Use Effect where it improves:
 
 Do not overcomplicate simple library code with gratuitous Effect wrapping.
 
-The package’s real value is in clear contracts and composable flows, not ideological FP maximalism.
+The package's real value is in clear contracts and composable flows, not
+ideological FP maximalism.
 
 ## Adapter Boundary Rules
 
@@ -161,7 +175,9 @@ These boundaries matter:
 - App-specific admin UI does **not** belong here.
 - Payment adapters should stay business-agnostic and site-agnostic.
 
-If a feature requires Playwright, remote HTTP bridge calls, Modal deployment details, or selector maintenance, it almost certainly belongs in `acuity-middleware`, not here.
+If a feature requires Playwright, remote HTTP bridge calls, Modal deployment
+details, or selector maintenance, it almost certainly belongs in
+`acuity-middleware`, not here.
 
 ## Testing Strategy
 
@@ -192,7 +208,8 @@ Do not turn live-provider tests into the default CI path.
 - Keep adapters small and explicit.
 - Preserve backend-agnostic abstractions.
 - Avoid hard-coding MassageIthaca-specific behavior.
-- Keep payment adapter semantics clear about who receives funds and who owns platform state.
+- Keep payment adapter semantics clear about who receives funds and who owns
+  platform state.
 - Prefer deterministic tests with fixtures/cassettes over flaky live reads.
 
 ## Important Files
