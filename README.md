@@ -73,13 +73,13 @@ Longer term, the intended publish shape is:
 
 ## Runner Authority
 
-Canonical GitHub Actions package CI and publish now run on the repo-owned
-GloriousFlywheel self-hosted runner lane with the plain repo label
-`["scheduling-kit"]`.
+Package CI and publish currently use the shared `js-bazel-package` workflow with
+`runner_mode: repo_owned` and labels from `PRIMARY_LINUX_RUNNER_LABELS_JSON`.
+The current repo variable is `["tinyland-nix"]`.
 
-Treat that label as the active truth surface for package authority. Do not
-describe broader repo-owned self-hosted label arrays as live contract unless
-they are reproven from current runs.
+Treat that runner contract as pending proof until the repo Actions runner API
+and green workflow runs confirm the lane. Keep private runner topology and
+apply details out of this public repo.
 
 ## Quick Start
 
