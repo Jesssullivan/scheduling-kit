@@ -38,37 +38,47 @@ The package should be reusable across multiple businesses. Avoid app-specific as
 
 ## Current Tracking
 
-As of `2026-04-15`, the active structural work is no longer just downstream
-contract cleanup. It is release-authority and artifact-truth convergence.
+As of `2026-04-25`, the active structural work is no longer just downstream
+contract cleanup. It is release-authority, artifact-truth, and runner-contract
+convergence.
 
 Active threads:
 
-- `TIN-101` mini sprint: toolchain authority and hermetic package convergence
-- `TIN-103` converge `scheduling-kit` release authority and remote truth
-- `TIN-104` adopt Bazel-built artifact truth in package publish lanes
+- `TIN-89` package, Bazel, CI, publish, and dependency truth across shared
+  scheduling packages
+- `TIN-165` bazel-registry generation from standalone package truth
+- release, tag, npm, and GitHub release authority cleanup tracked in GitHub
+  issue `#73`
+- runner reachability and shared-runner proof before treating repo-owned
+  package runners as a stable public workflow contract
 
 Current operational truth:
 
 - local development should default to `jesssullivan/main`
 - that branch is the current functional release line
+- current package metadata on `main` is `@tummycrypt/scheduling-kit` `0.7.2`
 - `tinyland-inc/origin/main` is now a downstream mirror/validation surface,
   not an equally authoritative release surface
+- package metadata, git tags, npm dist-tags, and GitHub releases are separate
+  authority surfaces until `#73` is resolved
 
 ## Build Truth
 
 There are **two** build surfaces in this repo:
 
-1. `pnpm` is the real packaging and publish path
-2. Bazel is the hermetic build graph and conformity guard
+1. `pnpm` remains the package-manager and script interface for local work
+2. Bazel defines and builds the publishable package artifact used by CI
 
 Do not confuse them.
 
 ### Canonical publish path
 
-Today, the functional publish path is still driven by:
+Today, the functional publish path is driven by:
 
-- `pnpm build`
-- GitHub Actions publish workflows
+- the shared `js-bazel-package` GitHub Actions workflow
+- metadata, typecheck, lint, test, and build commands invoked through pnpm
+- Bazel targets including `//:pkg`
+- publishable package output from `./bazel-bin/pkg`
 - npm / GitHub Packages release jobs
 
 And, right now, the functional release repo is:
@@ -84,9 +94,8 @@ Bazel exists to provide:
 
 - hermetic graph definition
 - version / metadata conformity checks
-- future cacheability and reproducibility
-
-It is not yet the direct npm publish entrypoint.
+- cacheability and reproducibility
+- the package artifact that CI publishes
 
 Current target state:
 
@@ -144,13 +153,15 @@ Release/publish changes should be made against the functional release line
 first, then ported deliberately into the mirror when needed. Do not split
 package truth across both remotes by accident.
 
-Current Phase 2 runner truth:
+Current runner truth:
 
-- canonical package CI/publish authority is repo-owned on GloriousFlywheel
-- the current proven runner contract is the plain repo label
-  `["scheduling-kit"]`
-- do not describe richer repo-owned self-hosted label arrays as current truth
-  unless the live workflow contract is explicitly reproven
+- current workflows use `runner_mode: repo_owned` and read labels from
+  `PRIMARY_LINUX_RUNNER_LABELS_JSON`
+- the current repo variable is `["tinyland-nix"]`
+- do not describe the runner lane as fully proven until repo Actions runner
+  visibility and green workflow runs confirm it
+- keep private runner topology, cluster names, and apply details out of this
+  public repo; track those in the private infrastructure repo and Linear
 
 ## Effect / Architecture Notes
 
