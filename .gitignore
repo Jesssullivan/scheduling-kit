@@ -9,6 +9,7 @@ __pycache__/
 *.pyc
 .DS_Store
 playwright-report/
+site/
 test-results/
 *.tgz
 PROGRESS.md

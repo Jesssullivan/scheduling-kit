@@ -1,12 +1,17 @@
 # @tummycrypt/scheduling-kit
 
-Backend-agnostic scheduling system with Svelte 5 components, multiple
-scheduling adapters, and alternative payment support. Built with Effect for
-typed workflows and Zod for runtime validation.
+Backend-agnostic scheduling library with Svelte 5 components, pluggable
+scheduling adapters, alternative payment support, and Effect-powered workflow
+composition.
 
-Docs, prebuilts, packages and blog post to come later. Another tinyland
-artifact it is time to publish. This package powers scheduling transactions
-for small buisnesses in the eastern US for whom I've done contracting work.
+This repo keeps two intentionally different build surfaces:
+
+- `pnpm` is the local package-manager and script interface
+- Bazel defines and builds the publishable package artifact used by CI
+
+The recommended local bootstrap path is the repo flake plus `direnv`, which
+makes `pnpm`, `bazel` through Bazelisk, and the docs toolchain available from a
+clean shell.
 
 ## Features
 
@@ -27,6 +32,17 @@ for small buisnesses in the eastern US for whom I've done contracting work.
 pnpm add @tummycrypt/scheduling-kit
 ```
 
+## Development Environment
+
+```bash
+direnv allow
+pnpm install
+```
+
+If `bazel` is missing in your current shell, enter the flake environment with
+`nix develop` or let `direnv` load `.envrc`. The dev shell provides a `bazel`
+wrapper backed by Bazelisk and pinned by `.bazelversion`.
+
 Peer dependencies (install those you need):
 
 ```bash
@@ -45,13 +61,23 @@ pnpm add -D playwright-core
 ```bash
 pnpm check:release-metadata
 pnpm check:package
-npx --yes @bazel/bazelisk build //:pkg
+bazel build //:pkg
 npm pack --dry-run ./bazel-bin/pkg
 ```
 
 Those checks keep `package.json`, `MODULE.bazel`, and `BUILD.bazel` aligned,
 then validate the Bazel-built package artifact before anything gets near a
 registry.
+
+## Documentation
+
+```bash
+pnpm docs:generate      # Regenerate derived Markdown and llms surfaces
+pnpm docs:check         # Validate generated docs and MkDocs config
+pnpm docs:serve         # Local docs preview at http://127.0.0.1:8000
+nix build .#docs        # Build the static docs site as a derivation
+nix flake check         # Evaluate flake outputs and run lightweight checks
+```
 
 ## Release Authority
 
@@ -67,14 +93,14 @@ metadata changes. Do not assume both `main` branches are equivalent.
 Longer term, the intended publish shape is:
 
 1. release metadata declared once
-2. Bazel validates/builds the publishable artifact
+2. Bazel defines and builds the publishable artifact
 3. GitHub Actions publishes that artifact to npm
 4. downstream apps consume the published package only
 
 ## Runner Authority
 
 Package CI and publish currently use the shared `js-bazel-package` workflow with
-`runner_mode: repo_owned` and labels from `PRIMARY_LINUX_RUNNER_LABELS_JSON`.
+`runner_mode: shared` and labels from `PRIMARY_LINUX_RUNNER_LABELS_JSON`.
 
 Treat that runner contract as pending proof until the repo Actions runner API
 and green workflow runs confirm the lane. Keep private runner topology and
