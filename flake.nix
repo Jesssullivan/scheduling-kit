@@ -22,9 +22,12 @@
 
         bazelWrapper = pkgs.writeShellApplication {
           name = "bazel";
-          runtimeInputs = [ pkgs.nodejs_22 ];
+          runtimeInputs = [
+            pkgs.bazelisk
+            pkgs.jdk21_headless
+          ];
           text = ''
-            exec npx --yes @bazel/bazelisk "$@"
+            exec bazelisk "$@"
           '';
         };
 
@@ -89,7 +92,7 @@
             echo "scheduling-kit dev shell"
             echo "Node: $(node --version)"
             echo "pnpm: $(pnpm --version)"
-            echo "bazel: wrapper via npx @bazel/bazelisk $(cat .bazelversion)"
+            echo "bazel: nixpkgs bazelisk wrapper using .bazelversion $(cat .bazelversion)"
             echo "mkdocs: $(mkdocs --version | cut -d',' -f1)"
           '';
         };
