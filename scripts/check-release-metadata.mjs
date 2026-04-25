@@ -20,12 +20,23 @@ const extract = (source, pattern, label) => {
 const expectedVersion = packageJson.version;
 const expectedPackageName = packageJson.name;
 const expectedPnpmVersion = packageJson.packageManager?.replace(/^pnpm@/, '');
-const expectedGitHubPackageName = '@jesssullivan/scheduling-kit';
 const expectedRepositoryUrl = 'git+https://github.com/Jesssullivan/scheduling-kit.git';
+const expectedPackageBasename = expectedPackageName.split('/').at(-1);
+const expectedRepositoryOwner = new URL(expectedRepositoryUrl.replace(/^git\+/, ''))
+	.pathname.split('/')
+	.filter(Boolean)[0]
+	.toLowerCase();
+const expectedGitHubPackageName = `@${expectedRepositoryOwner}/${expectedPackageBasename}`;
 
 const includes = (source, needle) => source.includes(needle);
+const scalar = (value) =>
+	value
+		.trim()
+		.replace(/^(['"])(.*)\1\s*(?:#.*)?$/, '$2')
+		.replace(/\s+#.*$/, '')
+		.trim();
 const usesPinnedPackageWorkflow = (workflow) =>
-	/uses:\s*tinyland-inc\/ci-templates\/\.github\/workflows\/js-bazel-package\.yml@[0-9a-f]{40}/.test(
+	/uses:\s*tinyland-inc\/ci-templates\/\.github\/workflows\/js-bazel-package\.yml@[0-9a-fA-F]{40}/.test(
 		workflow,
 	);
 
@@ -62,17 +73,17 @@ const checks = [
 	},
 	{
 		label: 'CI runner mode',
-		actual: extract(ciWorkflow, /runner_mode:\s*([^\n]+)/, 'CI runner_mode').trim(),
+		actual: scalar(extract(ciWorkflow, /runner_mode:\s*([^\n]+)/, 'CI runner_mode')),
 		expected: 'shared',
 	},
 	{
 		label: 'CI publish mode',
-		actual: extract(ciWorkflow, /publish_mode:\s*([^\n]+)/, 'CI publish_mode').trim(),
+		actual: scalar(extract(ciWorkflow, /publish_mode:\s*([^\n]+)/, 'CI publish_mode')),
 		expected: 'same_runner',
 	},
 	{
 		label: 'CI package artifact path',
-		actual: extract(ciWorkflow, /package_dir:\s*([^\n]+)/, 'CI package_dir').trim(),
+		actual: scalar(extract(ciWorkflow, /package_dir:\s*([^\n]+)/, 'CI package_dir')),
 		expected: './bazel-bin/pkg',
 	},
 	{
@@ -94,12 +105,14 @@ const checks = [
 	},
 	{
 		label: 'publish packages permission',
-		actual: extract(publishWorkflow, /packages:\s*([^\n]+)/, 'publish packages permission').trim(),
+		actual: scalar(
+			extract(publishWorkflow, /packages:\s*([^\n]+)/, 'publish packages permission'),
+		),
 		expected: 'write',
 	},
 	{
 		label: 'publish package artifact path',
-		actual: extract(publishWorkflow, /package_dir:\s*([^\n]+)/, 'publish package_dir').trim(),
+		actual: scalar(extract(publishWorkflow, /package_dir:\s*([^\n]+)/, 'publish package_dir')),
 		expected: './bazel-bin/pkg',
 	},
 	{
