@@ -6,16 +6,17 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Dry run (no actual publish)'
+        description: "Dry run (no actual publish)"
         required: false
         type: boolean
         default: true
 
 jobs:
   package:
-    uses: tinyland-inc/ci-templates/.github/workflows/js-bazel-package.yml@f2e12c10580f17d54ac48434e2577fbcfe502a05
+    uses: tinyland-inc/ci-templates/.github/workflows/js-bazel-package.yml@c9e81f802fe9520260a5389121f8291049e030e1
     with:
-      runner_mode: repo_owned
+      runner_mode: shared
+      shared_runner_labels_json: ${{ vars.PRIMARY_LINUX_RUNNER_LABELS_JSON }}
       runner_labels_json: ${{ vars.PRIMARY_LINUX_RUNNER_LABELS_JSON }}
       workspace_mode: isolated
       publish_mode: same_runner
