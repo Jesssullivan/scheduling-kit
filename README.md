@@ -75,7 +75,6 @@ Longer term, the intended publish shape is:
 
 Package CI and publish currently use the shared `js-bazel-package` workflow with
 `runner_mode: repo_owned` and labels from `PRIMARY_LINUX_RUNNER_LABELS_JSON`.
-The current repo variable is `["tinyland-nix"]`.
 
 Treat that runner contract as pending proof until the repo Actions runner API
 and green workflow runs confirm the lane. Keep private runner topology and

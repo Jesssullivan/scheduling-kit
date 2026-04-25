@@ -157,7 +157,6 @@ Current runner truth:
 
 - current workflows use `runner_mode: repo_owned` and read labels from
   `PRIMARY_LINUX_RUNNER_LABELS_JSON`
-- the current repo variable is `["tinyland-nix"]`
 - do not describe the runner lane as fully proven until repo Actions runner
   visibility and green workflow runs confirm it
 - keep private runner topology, cluster names, and apply details out of this
