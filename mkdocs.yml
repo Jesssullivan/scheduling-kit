@@ -1,0 +1,52 @@
+site_name: scheduling-kit
+site_description: Backend-agnostic scheduling library with Effect workflows, Bazel metadata, and Svelte checkout components
+repo_url: https://github.com/Jesssullivan/scheduling-kit
+repo_name: Jesssullivan/scheduling-kit
+docs_dir: docs
+site_dir: site
+strict: true
+
+theme:
+  name: material
+  language: en
+  font:
+    text: IBM Plex Sans
+    code: IBM Plex Mono
+  palette:
+    - scheme: default
+      primary: teal
+      accent: amber
+  features:
+    - navigation.instant
+    - navigation.sections
+    - navigation.footer
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - Home: index.md
+  - Build & Release: build-and-release.md
+  - Testing: testing.md
+  - Tracing: tracing.md
+  - Generated:
+      - Package Surface: generated/package-surface.md
+      - Release Metadata: generated/release-metadata.md
