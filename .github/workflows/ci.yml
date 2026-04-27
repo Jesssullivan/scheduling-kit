@@ -7,6 +7,13 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   package:
     uses: tinyland-inc/ci-templates/.github/workflows/js-bazel-package.yml@21e0093a7586931ee69d716387e00556c6da7738
@@ -30,6 +37,6 @@ jobs:
       bazel_targets: "//:typecheck //:pkg //:test"
       package_dir: ./bazel-bin/pkg
       npm_access: public
+      npm_publish_provenance: true
       github_package_name: "@jesssullivan/scheduling-kit"
       dry_run: true
-    secrets: inherit
