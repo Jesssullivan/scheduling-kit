@@ -19,10 +19,11 @@ Subpackage structure:
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
 load("@aspect_rules_js//npm:defs.bzl", "npm_package")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
-load("@npm//:defs.bzl", "npm_link_all_packages")
-load("@npm//:svelte-check/package_json.bzl", svelte_check = "bin")
-load("@npm//:@sveltejs/package/package_json.bzl", svelte_package = "bin")
-load("@npm//:vitest/package_json.bzl", vitest_bin = "bin")
+load("@tummycrypt_scheduling_kit_npm//:defs.bzl", "npm_link_all_packages")
+load("@tummycrypt_scheduling_kit_npm//:@sveltejs/kit/package_json.bzl", svelte_kit = "bin")
+load("@tummycrypt_scheduling_kit_npm//:svelte-check/package_json.bzl", svelte_check = "bin")
+load("@tummycrypt_scheduling_kit_npm//:@sveltejs/package/package_json.bzl", svelte_package = "bin")
+load("@tummycrypt_scheduling_kit_npm//:vitest/package_json.bzl", vitest_bin = "bin")
 
 # =============================================================================
 # npm link - makes node_modules available
@@ -37,6 +38,32 @@ svelte_check.svelte_check_binary(
 
 svelte_package.svelte_package_binary(
     name = "svelte_package",
+    visibility = ["//visibility:public"],
+)
+
+svelte_kit.svelte_kit_binary(
+    name = "svelte_kit",
+    visibility = ["//visibility:public"],
+)
+
+# svelte-check and Vitest both read tsconfig.json, which extends the generated
+# .svelte-kit/tsconfig.json. Mirror the pnpm scripts' required sync step.
+js_run_binary(
+    name = "svelte_kit_sync",
+    tags = ["manual"],
+    tool = ":svelte_kit",
+    srcs = glob([
+        "src/**/*.ts",
+        "src/**/*.svelte",
+        "src/**/*.svelte.ts",
+    ]) + [
+        "package.json",
+        "svelte.config.js",
+        "tsconfig.json",
+        ":node_modules",
+    ],
+    args = ["sync"],
+    out_dirs = [".svelte-kit"],
     visibility = ["//visibility:public"],
 )
 
@@ -66,6 +93,7 @@ js_run_binary(
         "package.json",
         "svelte.config.js",
         "tsconfig.json",
+        ":svelte_kit_sync",
         ":node_modules",
     ],
     args = [
@@ -228,10 +256,15 @@ vitest_bin.vitest_test(
     tags = ["manual"],
     data = [
         ":node_modules",
+        ":svelte_kit_sync",
         "tsconfig.json",
         ":node_modules/vitest",
         "vitest.config.ts",
-    ] + glob(["src/**/*.ts"]),
+    ] + glob([
+        "src/**/*.ts",
+        "src/**/*.svelte",
+        "src/**/*.svelte.ts",
+    ]),
     args = [
         "run",
         "--reporter=verbose",
@@ -264,6 +297,7 @@ js_run_binary(
     ) + [
         "svelte.config.js",
         "tsconfig.json",
+        ":svelte_kit_sync",
         ":node_modules",
     ],
     args = [
