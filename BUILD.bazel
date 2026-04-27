@@ -285,10 +285,6 @@ js_run_binary(
     tool = ":svelte_check",
     srcs = glob(
         [
-            ".svelte-kit/**/*.d.ts",
-            ".svelte-kit/**/*.json",
-            ".svelte-kit/**/*.js",
-            ".svelte-kit/**/*.ts",
             "src/**/*.ts",
             "src/**/*.svelte",
             "src/**/*.svelte.ts",
