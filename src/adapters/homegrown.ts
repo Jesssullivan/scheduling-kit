@@ -41,8 +41,17 @@ import {
 // ---------------------------------------------------------------------------
 
 export interface HomegrownAdapterConfig {
-  /** Drizzle database instance (lazy, to avoid import-time DB connection) */
-  getDb: () => Promise<any>;
+  /** Drizzle database instance (lazy, to avoid import-time DB connection). */
+  getDb?: () => Promise<any>;
+  /**
+   * Optional scoped database executor.
+   *
+   * Consumers with transaction-local RLS, tenant pinning, or connection
+   * middleware should provide this instead of exposing a raw database handle.
+   * The callback receives a Drizzle database/transaction object and the adapter
+   * awaits the callback result before leaving the scope.
+   */
+  withDb?: <T>(fn: (db: any) => Promise<T>) => Promise<T>;
   /** Timezone for availability calculations */
   timezone?: string;
   /** Slot interval in minutes */
@@ -66,8 +75,13 @@ export const createHomegrownAdapter = (config: HomegrownAdapterConfig): Scheduli
   const minAdvance = config.minAdvanceHours ?? 2;
   const practitionerHandle = config.defaultPractitionerHandle ?? 'jen';
 
-  // Lazy DB access — imports done at call time to avoid bundling Drizzle in client
-  const db = () => config.getDb();
+  const withDb = async <T>(fn: (db: any) => Promise<T>): Promise<T> => {
+    if (config.withDb) return config.withDb(fn);
+    if (!config.getDb) {
+      throw new Error('HomegrownAdapter requires either getDb or withDb');
+    }
+    return fn(await config.getDb());
+  };
 
   // ---------------------------------------------------------------------------
   // Helpers
@@ -91,7 +105,6 @@ export const createHomegrownAdapter = (config: HomegrownAdapterConfig): Scheduli
       '@tummycrypt/tinyland-auth-pg/content-schema'
     );
     const { eq, or } = await import('drizzle-orm');
-    const d = await db();
 
     // UUID regex — only compare against UUID column if input looks like one
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serviceId);
@@ -100,47 +113,51 @@ export const createHomegrownAdapter = (config: HomegrownAdapterConfig): Scheduli
       ? or(eq(servicesTable.id, serviceId), eq(servicesTable.acuityId, serviceId))
       : eq(servicesTable.acuityId, serviceId);
 
-    const [row] = await d
-      .select()
-      .from(servicesTable)
-      .where(condition)
-      .limit(1);
+    return withDb(async (d) => {
+      const [row] = await d
+        .select()
+        .from(servicesTable)
+        .where(condition)
+        .limit(1);
 
-    return row ?? null;
+      return row ?? null;
+    });
   };
 
   /** Load business hours as a Map<dayOfWeek, HoursWindow> */
   const loadHoursMap = async (): Promise<Map<number, HoursWindow>> => {
     const { businessHours } = await import('@tummycrypt/tinyland-auth-pg/content-schema');
     const { asc } = await import('drizzle-orm');
-    const d = await db();
-    const rows = await d.select().from(businessHours).orderBy(asc(businessHours.dayOfWeek));
-    const map = new Map<number, HoursWindow>();
-    for (const row of rows) {
-      map.set(row.dayOfWeek, { opens: row.opens, closes: row.closes });
-    }
-    return map;
+    return withDb(async (d) => {
+      const rows = await d.select().from(businessHours).orderBy(asc(businessHours.dayOfWeek));
+      const map = new Map<number, HoursWindow>();
+      for (const row of rows) {
+        map.set(row.dayOfWeek, { opens: row.opens, closes: row.closes });
+      }
+      return map;
+    });
   };
 
   /** Load overrides for a date range */
   const loadOverrides = async (startDate: string, endDate: string): Promise<HoursOverride[]> => {
     const { businessHoursOverrides } = await import('@tummycrypt/tinyland-auth-pg/booking-schema');
     const { gte, lte, and } = await import('drizzle-orm');
-    const d = await db();
-    const rows = await d
-      .select()
-      .from(businessHoursOverrides)
-      .where(
-        and(
-          gte(businessHoursOverrides.date, startDate),
-          lte(businessHoursOverrides.date, endDate),
-        ),
-      );
-    return rows.map((r: any) => ({
-      date: r.date,
-      opens: r.opens,
-      closes: r.closes,
-    }));
+    return withDb(async (d) => {
+      const rows = await d
+        .select()
+        .from(businessHoursOverrides)
+        .where(
+          and(
+            gte(businessHoursOverrides.date, startDate),
+            lte(businessHoursOverrides.date, endDate),
+          ),
+        );
+      return rows.map((r: any) => ({
+        date: r.date,
+        opens: r.opens,
+        closes: r.closes,
+      }));
+    });
   };
 
   /** Load occupied blocks (bookings + time_blocks + active reservations) for a date range */
@@ -149,80 +166,82 @@ export const createHomegrownAdapter = (config: HomegrownAdapterConfig): Scheduli
       '@tummycrypt/tinyland-auth-pg/booking-schema'
     );
     const { gte, lte, and, ne, isNull, or, gt } = await import('drizzle-orm');
-    const d = await db();
 
     const startIso = `${startDate}T00:00:00Z`;
     const endIso = `${endDate}T23:59:59Z`;
 
-    // Active bookings (not cancelled)
-    const bookingRows = await d
-      .select({ datetime: bookingsTable.datetime, endTime: bookingsTable.endTime })
-      .from(bookingsTable)
-      .where(
-        and(
-          gte(bookingsTable.datetime, startIso),
-          lte(bookingsTable.datetime, endIso),
-          ne(bookingsTable.status, 'cancelled'),
-        ),
-      );
+    return withDb(async (d) => {
+      // Active bookings (not cancelled)
+      const bookingRows = await d
+        .select({ datetime: bookingsTable.datetime, endTime: bookingsTable.endTime })
+        .from(bookingsTable)
+        .where(
+          and(
+            gte(bookingsTable.datetime, startIso),
+            lte(bookingsTable.datetime, endIso),
+            ne(bookingsTable.status, 'cancelled'),
+          ),
+        );
 
-    // Time blocks
-    const blockRows = await d
-      .select({ startTime: timeBlocks.startTime, endTime: timeBlocks.endTime })
-      .from(timeBlocks)
-      .where(
-        and(
-          gte(timeBlocks.startTime, startIso),
-          lte(timeBlocks.startTime, endIso),
-        ),
-      );
+      // Time blocks
+      const blockRows = await d
+        .select({ startTime: timeBlocks.startTime, endTime: timeBlocks.endTime })
+        .from(timeBlocks)
+        .where(
+          and(
+            gte(timeBlocks.startTime, startIso),
+            lte(timeBlocks.startTime, endIso),
+          ),
+        );
 
-    // Active reservations (not expired, not released)
-    const reservationRows = await d
-      .select({
-        datetime: slotReservations.datetime,
-        duration: slotReservations.duration,
-      })
-      .from(slotReservations)
-      .where(
-        and(
-          gte(slotReservations.datetime, startIso),
-          lte(slotReservations.datetime, endIso),
-          gt(slotReservations.expiresAt, new Date().toISOString()),
-          isNull(slotReservations.releasedAt),
-        ),
-      );
+      // Active reservations (not expired, not released)
+      const reservationRows = await d
+        .select({
+          datetime: slotReservations.datetime,
+          duration: slotReservations.duration,
+        })
+        .from(slotReservations)
+        .where(
+          and(
+            gte(slotReservations.datetime, startIso),
+            lte(slotReservations.datetime, endIso),
+            gt(slotReservations.expiresAt, new Date().toISOString()),
+            isNull(slotReservations.releasedAt),
+          ),
+        );
 
-    const occupied: OccupiedBlock[] = [];
+      const occupied: OccupiedBlock[] = [];
 
-    for (const r of bookingRows) {
-      occupied.push({ start: new Date(r.datetime), end: new Date(r.endTime) });
-    }
-    for (const r of blockRows) {
-      occupied.push({ start: new Date(r.startTime), end: new Date(r.endTime) });
-    }
-    for (const r of reservationRows) {
-      const start = new Date(r.datetime);
-      occupied.push({
-        start,
-        end: new Date(start.getTime() + r.duration * 60_000),
-      });
-    }
+      for (const r of bookingRows) {
+        occupied.push({ start: new Date(r.datetime), end: new Date(r.endTime) });
+      }
+      for (const r of blockRows) {
+        occupied.push({ start: new Date(r.startTime), end: new Date(r.endTime) });
+      }
+      for (const r of reservationRows) {
+        const start = new Date(r.datetime);
+        occupied.push({
+          start,
+          end: new Date(start.getTime() + r.duration * 60_000),
+        });
+      }
 
-    return occupied;
+      return occupied;
+    });
   };
 
   /** Get the default practitioner */
   const getDefaultPractitioner = async (): Promise<any> => {
     const { practitioners } = await import('@tummycrypt/tinyland-auth-pg/content-schema');
     const { eq } = await import('drizzle-orm');
-    const d = await db();
-    const [row] = await d
-      .select()
-      .from(practitioners)
-      .where(eq(practitioners.handle, practitionerHandle))
-      .limit(1);
-    return row ?? null;
+    return withDb(async (d) => {
+      const [row] = await d
+        .select()
+        .from(practitioners)
+        .where(eq(practitioners.handle, practitionerHandle))
+        .limit(1);
+      return row ?? null;
+    });
   };
 
   // ---------------------------------------------------------------------------
@@ -240,12 +259,13 @@ export const createHomegrownAdapter = (config: HomegrownAdapterConfig): Scheduli
           '@tummycrypt/tinyland-auth-pg/content-schema'
         );
         const { asc, eq } = await import('drizzle-orm');
-        const d = await db();
-        const rows = await d
-          .select()
-          .from(servicesTable)
-          .where(eq(servicesTable.active, true))
-          .orderBy(asc(servicesTable.displayOrder));
+        const rows = await withDb<any[]>((d) =>
+          d
+            .select()
+            .from(servicesTable)
+            .where(eq(servicesTable.active, true))
+            .orderBy(asc(servicesTable.displayOrder)),
+        );
 
         return rows.map(
           (r: any): Service => ({
@@ -302,12 +322,13 @@ export const createHomegrownAdapter = (config: HomegrownAdapterConfig): Scheduli
           '@tummycrypt/tinyland-auth-pg/content-schema'
         );
         const { eq } = await import('drizzle-orm');
-        const d = await db();
-        const [row] = await d
-          .select()
-          .from(practitioners)
-          .where(eq(practitioners.id, providerId))
-          .limit(1);
+        const [row] = await withDb<any[]>((d) =>
+          d
+            .select()
+            .from(practitioners)
+            .where(eq(practitioners.id, providerId))
+            .limit(1),
+        );
 
         if (!row) throw new Error(`Provider ${providerId} not found`);
 
@@ -425,20 +446,21 @@ export const createHomegrownAdapter = (config: HomegrownAdapterConfig): Scheduli
         const { slotReservations } = await import(
           '@tummycrypt/tinyland-auth-pg/booking-schema'
         );
-        const d = await db();
         const expirationMinutes = params.expirationMinutes ?? 10;
         const expiresAt = new Date(
           Date.now() + expirationMinutes * 60_000,
         ).toISOString();
 
-        const [row] = await d
-          .insert(slotReservations)
-          .values({
-            datetime: params.datetime,
-            duration: params.duration,
-            expiresAt,
-          })
-          .returning();
+        const [row] = await withDb<any[]>((d) =>
+          d
+            .insert(slotReservations)
+            .values({
+              datetime: params.datetime,
+              duration: params.duration,
+              expiresAt,
+            })
+            .returning(),
+        );
 
         return {
           id: row.id,
@@ -455,11 +477,12 @@ export const createHomegrownAdapter = (config: HomegrownAdapterConfig): Scheduli
           '@tummycrypt/tinyland-auth-pg/booking-schema'
         );
         const { eq } = await import('drizzle-orm');
-        const d = await db();
-        await d
-          .update(slotReservations)
-          .set({ releasedAt: new Date().toISOString() })
-          .where(eq(slotReservations.id, reservationId));
+        await withDb((d) =>
+          d
+            .update(slotReservations)
+            .set({ releasedAt: new Date().toISOString() })
+            .where(eq(slotReservations.id, reservationId)),
+        );
       }),
 
     // --- Bookings ---
@@ -485,24 +508,25 @@ export const createHomegrownAdapter = (config: HomegrownAdapterConfig): Scheduli
         const endDt = new Date(startDt.getTime() + svc.durationMinutes * 60_000);
         const confirmationCode = generateConfirmationCode();
 
-        const d = await db();
-        const [row] = await d
-          .insert(bookingsTable)
-          .values({
-            confirmationCode,
-            serviceId: svc.id,
-            practitionerId: prac?.id,
-            clientId,
-            datetime: startDt.toISOString(),
-            endTime: endDt.toISOString(),
-            duration: svc.durationMinutes,
-            status: 'confirmed',
-            paymentStatus: 'pending',
-            paymentMethod: request.paymentMethod ?? null,
-            amountCents: svc.priceCents,
-            idempotencyKey: request.idempotencyKey,
-          })
-          .returning();
+        const [row] = await withDb<any[]>((d) =>
+          d
+            .insert(bookingsTable)
+            .values({
+              confirmationCode,
+              serviceId: svc.id,
+              practitionerId: prac?.id,
+              clientId,
+              datetime: startDt.toISOString(),
+              endTime: endDt.toISOString(),
+              duration: svc.durationMinutes,
+              status: 'confirmed',
+              paymentStatus: 'pending',
+              paymentMethod: request.paymentMethod ?? null,
+              amountCents: svc.priceCents,
+              idempotencyKey: request.idempotencyKey,
+            })
+            .returning(),
+        );
 
         return {
           id: row.id,
@@ -536,16 +560,17 @@ export const createHomegrownAdapter = (config: HomegrownAdapterConfig): Scheduli
               '@tummycrypt/tinyland-auth-pg/booking-schema'
             );
             const { eq } = await import('drizzle-orm');
-            const d = await db();
 
-            await d
-              .update(bookingsTable)
-              .set({
-                paymentRef,
-                paymentMethod: paymentProcessor,
-                paymentStatus: 'paid',
-              })
-              .where(eq(bookingsTable.id, booking.id));
+            await withDb((d) =>
+              d
+                .update(bookingsTable)
+                .set({
+                  paymentRef,
+                  paymentMethod: paymentProcessor,
+                  paymentStatus: 'paid',
+                })
+                .where(eq(bookingsTable.id, booking.id)),
+            );
 
             return {
               ...booking,
@@ -564,62 +589,62 @@ export const createHomegrownAdapter = (config: HomegrownAdapterConfig): Scheduli
           '@tummycrypt/tinyland-auth-pg/content-schema'
         );
         const { eq } = await import('drizzle-orm');
-        const d = await db();
-
-        const [row] = await d
-          .select()
-          .from(bookingsTable)
-          .where(eq(bookingsTable.id, bookingId))
-          .limit(1);
-
-        if (!row) throw new Error(`Booking ${bookingId} not found`);
-
-        // Load related data
-        const [svc] = await d
-          .select()
-          .from(servicesTable)
-          .where(eq(servicesTable.id, row.serviceId))
-          .limit(1);
-
-        const [client] = await d
-          .select()
-          .from(clientsTable)
-          .where(eq(clientsTable.id, row.clientId))
-          .limit(1);
-
-        let providerName: string | undefined;
-        if (row.practitionerId) {
-          const [prac] = await d
+        return withDb(async (d) => {
+          const [row] = await d
             .select()
-            .from(practitioners)
-            .where(eq(practitioners.id, row.practitionerId))
+            .from(bookingsTable)
+            .where(eq(bookingsTable.id, bookingId))
             .limit(1);
-          providerName = prac?.name;
-        }
 
-        return {
-          id: row.id,
-          serviceId: row.serviceId,
-          serviceName: svc?.name ?? 'Unknown',
-          providerId: row.practitionerId ?? undefined,
-          providerName,
-          datetime: row.datetime,
-          endTime: row.endTime,
-          duration: row.duration,
-          price: row.amountCents,
-          currency: svc?.currency ?? 'USD',
-          client: {
-            firstName: client?.firstName ?? '',
-            lastName: client?.lastName ?? '',
-            email: client?.email ?? '',
-            phone: client?.phone ?? undefined,
-          },
-          status: row.status as BookingStatus,
-          confirmationCode: row.confirmationCode,
-          paymentStatus: row.paymentStatus as PaymentStatus,
-          paymentRef: row.paymentRef ?? undefined,
-          createdAt: row.createdAt,
-        } satisfies Booking;
+          if (!row) throw new Error(`Booking ${bookingId} not found`);
+
+          // Load related data
+          const [svc] = await d
+            .select()
+            .from(servicesTable)
+            .where(eq(servicesTable.id, row.serviceId))
+            .limit(1);
+
+          const [client] = await d
+            .select()
+            .from(clientsTable)
+            .where(eq(clientsTable.id, row.clientId))
+            .limit(1);
+
+          let providerName: string | undefined;
+          if (row.practitionerId) {
+            const [prac] = await d
+              .select()
+              .from(practitioners)
+              .where(eq(practitioners.id, row.practitionerId))
+              .limit(1);
+            providerName = prac?.name;
+          }
+
+          return {
+            id: row.id,
+            serviceId: row.serviceId,
+            serviceName: svc?.name ?? 'Unknown',
+            providerId: row.practitionerId ?? undefined,
+            providerName,
+            datetime: row.datetime,
+            endTime: row.endTime,
+            duration: row.duration,
+            price: row.amountCents,
+            currency: svc?.currency ?? 'USD',
+            client: {
+              firstName: client?.firstName ?? '',
+              lastName: client?.lastName ?? '',
+              email: client?.email ?? '',
+              phone: client?.phone ?? undefined,
+            },
+            status: row.status as BookingStatus,
+            confirmationCode: row.confirmationCode,
+            paymentStatus: row.paymentStatus as PaymentStatus,
+            paymentRef: row.paymentRef ?? undefined,
+            createdAt: row.createdAt,
+          } satisfies Booking;
+        });
       }),
 
     cancelBooking: (bookingId: string, reason?: string) =>
@@ -628,17 +653,18 @@ export const createHomegrownAdapter = (config: HomegrownAdapterConfig): Scheduli
           '@tummycrypt/tinyland-auth-pg/booking-schema'
         );
         const { eq } = await import('drizzle-orm');
-        const d = await db();
 
-        await d
-          .update(bookingsTable)
-          .set({
-            status: 'cancelled',
-            cancelledAt: new Date().toISOString(),
-            cancelReason: reason ?? null,
-            updatedAt: new Date().toISOString(),
-          })
-          .where(eq(bookingsTable.id, bookingId));
+        await withDb((d) =>
+          d
+            .update(bookingsTable)
+            .set({
+              status: 'cancelled',
+              cancelledAt: new Date().toISOString(),
+              cancelReason: reason ?? null,
+              updatedAt: new Date().toISOString(),
+            })
+            .where(eq(bookingsTable.id, bookingId)),
+        );
       }),
 
     rescheduleBooking: (bookingId: string, newDatetime: string) =>
@@ -647,27 +673,31 @@ export const createHomegrownAdapter = (config: HomegrownAdapterConfig): Scheduli
           '@tummycrypt/tinyland-auth-pg/booking-schema'
         );
         const { eq } = await import('drizzle-orm');
-        const d = await db();
 
-        const [existing] = await d
-          .select()
-          .from(bookingsTable)
-          .where(eq(bookingsTable.id, bookingId))
-          .limit(1);
+        const existing = await withDb(async (d) => {
+          const [row] = await d
+            .select()
+            .from(bookingsTable)
+            .where(eq(bookingsTable.id, bookingId))
+            .limit(1);
+          return row ?? null;
+        });
 
         if (!existing) throw new Error(`Booking ${bookingId} not found`);
 
         const newStart = new Date(newDatetime);
         const newEnd = new Date(newStart.getTime() + existing.duration * 60_000);
 
-        await d
-          .update(bookingsTable)
-          .set({
-            datetime: newStart.toISOString(),
-            endTime: newEnd.toISOString(),
-            updatedAt: new Date().toISOString(),
-          })
-          .where(eq(bookingsTable.id, bookingId));
+        await withDb((d) =>
+          d
+            .update(bookingsTable)
+            .set({
+              datetime: newStart.toISOString(),
+              endTime: newEnd.toISOString(),
+              updatedAt: new Date().toISOString(),
+            })
+            .where(eq(bookingsTable.id, bookingId)),
+        );
 
         // Return updated booking
         return await Effect.runPromise(adapter.getBooking(bookingId));
@@ -681,44 +711,44 @@ export const createHomegrownAdapter = (config: HomegrownAdapterConfig): Scheduli
           '@tummycrypt/tinyland-auth-pg/booking-schema'
         );
         const { eq } = await import('drizzle-orm');
-        const d = await db();
+        return withDb(async (d) => {
+          // Try to find existing
+          const [existing] = await d
+            .select()
+            .from(clientsTable)
+            .where(eq(clientsTable.email, client.email))
+            .limit(1);
 
-        // Try to find existing
-        const [existing] = await d
-          .select()
-          .from(clientsTable)
-          .where(eq(clientsTable.email, client.email))
-          .limit(1);
+          if (existing) {
+            // Update name/phone if changed
+            await d
+              .update(clientsTable)
+              .set({
+                firstName: client.firstName,
+                lastName: client.lastName,
+                phone: client.phone ?? existing.phone,
+                updatedAt: new Date().toISOString(),
+              })
+              .where(eq(clientsTable.id, existing.id));
 
-        if (existing) {
-          // Update name/phone if changed
-          await d
-            .update(clientsTable)
-            .set({
+            return { id: existing.id, isNew: false };
+          }
+
+          // Create new
+          const [row] = await d
+            .insert(clientsTable)
+            .values({
               firstName: client.firstName,
               lastName: client.lastName,
-              phone: client.phone ?? existing.phone,
-              updatedAt: new Date().toISOString(),
+              email: client.email,
+              phone: client.phone ?? null,
+              notes: client.notes ?? null,
+              customFields: client.customFields ?? {},
             })
-            .where(eq(clientsTable.id, existing.id));
+            .returning();
 
-          return { id: existing.id, isNew: false };
-        }
-
-        // Create new
-        const [row] = await d
-          .insert(clientsTable)
-          .values({
-            firstName: client.firstName,
-            lastName: client.lastName,
-            email: client.email,
-            phone: client.phone ?? null,
-            notes: client.notes ?? null,
-            customFields: client.customFields ?? {},
-          })
-          .returning();
-
-        return { id: row.id, isNew: true };
+          return { id: row.id, isNew: true };
+        });
       }),
 
     getClientByEmail: (email: string) =>
@@ -727,13 +757,13 @@ export const createHomegrownAdapter = (config: HomegrownAdapterConfig): Scheduli
           '@tummycrypt/tinyland-auth-pg/booking-schema'
         );
         const { eq } = await import('drizzle-orm');
-        const d = await db();
-
-        const [row] = await d
-          .select()
-          .from(clientsTable)
-          .where(eq(clientsTable.email, email))
-          .limit(1);
+        const [row] = await withDb<any[]>((d) =>
+          d
+            .select()
+            .from(clientsTable)
+            .where(eq(clientsTable.email, email))
+            .limit(1),
+        );
 
         if (!row) return null;
 

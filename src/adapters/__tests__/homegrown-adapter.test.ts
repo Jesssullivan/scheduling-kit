@@ -229,6 +229,27 @@ describe('HomegrownAdapter', () => {
       expect(adapter.name).toBe('homegrown');
     });
 
+    it('creates an adapter with a scoped database executor only', () => {
+      const adapter = createHomegrownAdapter({
+        withDb: async (fn) => fn({}),
+      });
+      expect(adapter.name).toBe('homegrown');
+    });
+
+    it('uses scoped database executor when provided', async () => {
+      const mockDb = createMockDb();
+      mockDb._terminals.orderBy.mockResolvedValue([SERVICE_ROW]);
+      const getDb = vi.fn(async () => mockDb);
+      const withDb = vi.fn(async (fn) => fn(mockDb));
+
+      const adapter = createHomegrownAdapter({ getDb, withDb });
+      const result = await Effect.runPromise(adapter.getServices());
+
+      expect(result).toHaveLength(1);
+      expect(withDb).toHaveBeenCalledOnce();
+      expect(getDb).not.toHaveBeenCalled();
+    });
+
     it('exposes all 16+1 SchedulingAdapter methods', () => {
       const adapter = createHomegrownAdapter({ getDb: async () => ({}) });
       const methods = [
