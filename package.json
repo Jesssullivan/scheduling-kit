@@ -1,6 +1,6 @@
 {
   "name": "@tummycrypt/scheduling-kit",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "Backend-agnostic scheduling components with alternative payment support",
   "type": "module",
   "packageManager": "pnpm@9.15.9",
@@ -100,7 +100,7 @@
     }
   },
   "dependencies": {
-    "@tummycrypt/tinyland-auth-pg": "^0.1.1",
+    "@tummycrypt/tinyland-auth-pg": "^0.2.1",
     "drizzle-orm": "0.39.3",
     "effect": "^3.19.14",
     "zod": "^4.3.5"
