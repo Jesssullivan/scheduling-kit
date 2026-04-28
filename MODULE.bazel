@@ -68,13 +68,13 @@ use_repo(pnpm, "pnpm")
 npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm")
 
 npm.npm_translate_lock(
-    name = "npm",
+    name = "tummycrypt_scheduling_kit_npm",
     pnpm_lock = "//:pnpm-lock.yaml",
     data = ["//:package.json"],
     npmrc = "//:.npmrc",
 )
 
-use_repo(npm, "npm")
+use_repo(npm, "tummycrypt_scheduling_kit_npm")
 
 # =============================================================================
 # TypeScript toolchain
