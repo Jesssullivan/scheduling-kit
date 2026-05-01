@@ -95,14 +95,21 @@
     onMonthChange?.(formatDate(start), formatDate(end));
   };
 
+  const clearDateTimeSelection = () => {
+    selectedDate = undefined;
+    selectedTime = undefined;
+  };
+
   // Navigate months
   const prevMonth = () => {
     currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1);
+    clearDateTimeSelection();
     emitMonthRange(currentMonth);
   };
 
   const nextMonth = () => {
     currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
+    clearDateTimeSelection();
     emitMonthRange(currentMonth);
   };
 
