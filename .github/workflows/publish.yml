@@ -14,7 +14,12 @@ on:
 permissions:
   actions: read
   contents: read
+  id-token: write
   packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name || github.ref }}
+  cancel-in-progress: false
 
 jobs:
   package:
@@ -39,6 +44,7 @@ jobs:
       bazel_targets: "//:typecheck //:pkg //:test"
       package_dir: ./bazel-bin/pkg
       npm_access: public
+      npm_publish_provenance: true
       github_package_name: "@jesssullivan/scheduling-kit"
       dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
     secrets:
