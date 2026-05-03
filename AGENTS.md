@@ -57,12 +57,14 @@ Current operational truth:
 
 - local development should default to `jesssullivan/main`
 - that branch is the current functional release line
-- current published package truth is `@tummycrypt/scheduling-kit` `0.7.5`
-  on npm, GitHub Releases, and the active tinyland Bazel registry
-- the `0.7.6` lane fixes downstream Bzlmod `//:pkg` consumption by making the
-  Svelte package build independent of main-workspace-relative `src` paths
-- keep `#73` open until the next package release/tag/registry pass proves the
-  updated Bazel consumer path end to end
+- current published package truth is `@tummycrypt/scheduling-kit` `0.7.6`
+  on npm, GitHub Releases, GitHub Packages, and the active tinyland Bazel
+  registry
+- `0.7.6` fixes downstream Bzlmod `//:pkg` consumption by making the Svelte
+  package build independent of main-workspace-relative `src` paths
+- `#73` remains open only for explicit historical release-surface
+  backfill/documentation around older `0.7.1` / `0.7.2` gaps; the current
+  release/tag/npm/Bazel/registry authority path is healthy
 - `tinyland-inc/origin/main` is now a downstream mirror/validation surface,
   not an equally authoritative release surface
 - package metadata, git tags, npm dist-tags, and GitHub releases are separate
