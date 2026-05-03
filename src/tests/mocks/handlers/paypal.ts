@@ -34,6 +34,7 @@ interface MockState {
   simulateCaptureFailure: boolean;
   simulateRefundFailure: boolean;
   simulateNetworkDelay: number;
+  lastCreateOrderBody: unknown | null;
 }
 
 const defaultState: MockState = {
@@ -46,6 +47,7 @@ const defaultState: MockState = {
   simulateCaptureFailure: false,
   simulateRefundFailure: false,
   simulateNetworkDelay: 0,
+  lastCreateOrderBody: null,
 };
 
 let state = { ...defaultState };
@@ -64,6 +66,7 @@ export const resetPayPalMockState = () => {
     simulateCaptureFailure: false,
     simulateRefundFailure: false,
     simulateNetworkDelay: 0,
+    lastCreateOrderBody: null,
   };
 };
 
@@ -84,7 +87,7 @@ export const getPayPalMockState = () => ({ ...state });
 // =============================================================================
 
 const withMiddleware = async (
-  handler: () => Response | Promise<Response>
+  handler: () => Response | Promise<Response>,
 ): Promise<Response> => {
   // Simulate network delay
   if (state.simulateNetworkDelay > 0) {
@@ -99,7 +102,7 @@ const withMiddleware = async (
         name: 'INTERNAL_SERVICE_ERROR',
         message: 'An internal service error occurred.',
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
@@ -118,8 +121,11 @@ const getAccessToken = http.post(
     return withMiddleware(() => {
       if (!authHeader || !authHeader.startsWith('Basic ')) {
         return HttpResponse.json(
-          { error: 'invalid_client', error_description: 'Client authentication failed' },
-          { status: 401 }
+          {
+            error: 'invalid_client',
+            error_description: 'Client authentication failed',
+          },
+          { status: 401 },
         );
       }
 
@@ -132,111 +138,118 @@ const getAccessToken = http.post(
         nonce: `mock-nonce-${Date.now()}`,
       });
     });
-  }
+  },
 );
 
 // =============================================================================
 // ORDERS (Payment Intents)
 // =============================================================================
 
-const createOrder = http.post(`${PAYPAL_BASE_URL}/v2/checkout/orders`, async ({ request }) => {
-  const body = (await request.json()) as {
-    intent: 'CAPTURE' | 'AUTHORIZE';
-    purchase_units: Array<{
-      amount: {
-        currency_code: string;
-        value: string;
+const createOrder = http.post(
+  `${PAYPAL_BASE_URL}/v2/checkout/orders`,
+  async ({ request }) => {
+    const body = (await request.json()) as {
+      intent: 'CAPTURE' | 'AUTHORIZE';
+      purchase_units: Array<{
+        amount: {
+          currency_code: string;
+          value: string;
+        };
+        description?: string;
+      }>;
+      payment_source?: {
+        venmo?: object;
+        paypal?: object;
       };
-      description?: string;
-    }>;
-    payment_source?: {
-      venmo?: object;
-      paypal?: object;
-    };
-  };
-
-  return withMiddleware(() => {
-    const orderId = `${state.nextOrderId++}MOCK`;
-    const purchaseUnit = body.purchase_units[0];
-
-    const order: MockOrder = {
-      id: orderId,
-      status: 'CREATED',
-      amount: purchaseUnit.amount,
-      paymentSource: body.payment_source?.venmo ? 'venmo' : 'paypal',
-      createTime: new Date().toISOString(),
     };
 
-    state.orders.set(orderId, order);
+    return withMiddleware(() => {
+      state.lastCreateOrderBody = body;
+      const orderId = `${state.nextOrderId++}MOCK`;
+      const purchaseUnit = body.purchase_units[0];
 
-    return HttpResponse.json({
-      id: orderId,
-      status: order.status,
-      purchase_units: [
-        {
-          reference_id: orderId,
-          amount: order.amount,
-        },
-      ],
-      create_time: order.createTime,
-      links: [
-        {
-          href: `${PAYPAL_BASE_URL}/v2/checkout/orders/${orderId}`,
-          rel: 'self',
-          method: 'GET',
-        },
-        {
-          href: `${PAYPAL_BASE_URL}/v2/checkout/orders/${orderId}/capture`,
-          rel: 'capture',
-          method: 'POST',
-        },
-        {
-          href: `https://www.sandbox.paypal.com/checkoutnow?token=${orderId}`,
-          rel: 'payer-action',
-          method: 'GET',
-        },
-      ],
+      const order: MockOrder = {
+        id: orderId,
+        status: 'CREATED',
+        amount: purchaseUnit.amount,
+        paymentSource: body.payment_source?.venmo ? 'venmo' : 'paypal',
+        createTime: new Date().toISOString(),
+      };
+
+      state.orders.set(orderId, order);
+
+      return HttpResponse.json({
+        id: orderId,
+        status: order.status,
+        purchase_units: [
+          {
+            reference_id: orderId,
+            amount: order.amount,
+          },
+        ],
+        create_time: order.createTime,
+        links: [
+          {
+            href: `${PAYPAL_BASE_URL}/v2/checkout/orders/${orderId}`,
+            rel: 'self',
+            method: 'GET',
+          },
+          {
+            href: `${PAYPAL_BASE_URL}/v2/checkout/orders/${orderId}/capture`,
+            rel: 'capture',
+            method: 'POST',
+          },
+          {
+            href: `https://www.sandbox.paypal.com/checkoutnow?token=${orderId}`,
+            rel: 'payer-action',
+            method: 'GET',
+          },
+        ],
+      });
     });
-  });
-});
+  },
+);
 
-const getOrder = http.get(`${PAYPAL_BASE_URL}/v2/checkout/orders/:id`, async ({ params }) => {
-  const id = params.id as string;
+const getOrder = http.get(
+  `${PAYPAL_BASE_URL}/v2/checkout/orders/:id`,
+  async ({ params }) => {
+    const id = params.id as string;
 
-  return withMiddleware(() => {
-    const order = state.orders.get(id);
-    if (!order) {
-      return HttpResponse.json(
-        { name: 'RESOURCE_NOT_FOUND', message: `Order ${id} not found` },
-        { status: 404 }
-      );
-    }
+    return withMiddleware(() => {
+      const order = state.orders.get(id);
+      if (!order) {
+        return HttpResponse.json(
+          { name: 'RESOURCE_NOT_FOUND', message: `Order ${id} not found` },
+          { status: 404 },
+        );
+      }
 
-    return HttpResponse.json({
-      id: order.id,
-      status: order.status,
-      create_time: order.createTime,
-      purchase_units: [
-        {
-          amount: order.amount,
-          payments: order.captureId
-            ? {
-                captures: [
-                  {
-                    id: order.captureId,
-                    status: 'COMPLETED',
-                    amount: order.amount,
-                    final_capture: true,
-                    create_time: new Date().toISOString(),
-                  },
-                ],
-              }
-            : undefined,
-        },
-      ],
+      return HttpResponse.json({
+        id: order.id,
+        status: order.status,
+        create_time: order.createTime,
+        purchase_units: [
+          {
+            amount: order.amount,
+            payments: order.captureId
+              ? {
+                  captures: [
+                    {
+                      id: order.captureId,
+                      status: 'COMPLETED',
+                      amount: order.amount,
+                      final_capture: true,
+                      create_time: new Date().toISOString(),
+                    },
+                  ],
+                }
+              : undefined,
+          },
+        ],
+      });
     });
-  });
-});
+  },
+);
 
 const captureOrder = http.post(
   `${PAYPAL_BASE_URL}/v2/checkout/orders/:id/capture`,
@@ -252,7 +265,7 @@ const captureOrder = http.post(
             name: 'INTERNAL_SERVICE_ERROR',
             message: 'An internal error occurred while capturing payment.',
           },
-          { status: 500 }
+          { status: 500 },
         );
       }
 
@@ -260,7 +273,7 @@ const captureOrder = http.post(
       if (!order) {
         return HttpResponse.json(
           { name: 'RESOURCE_NOT_FOUND', message: `Order ${id} not found` },
-          { status: 404 }
+          { status: 404 },
         );
       }
 
@@ -277,7 +290,7 @@ const captureOrder = http.post(
               },
             ],
           },
-          { status: 422 }
+          { status: 422 },
         );
       }
 
@@ -315,7 +328,7 @@ const captureOrder = http.post(
         },
       });
     });
-  }
+  },
 );
 
 // =============================================================================
@@ -327,7 +340,10 @@ const createRefund = http.post(
   async ({ params, request }) => {
     const captureId = params.captureId as string;
     // Body may be empty for full refunds
-    let body: { amount?: { currency_code: string; value: string }; note_to_payer?: string } = {};
+    let body: {
+      amount?: { currency_code: string; value: string };
+      note_to_payer?: string;
+    } = {};
     try {
       const text = await request.text();
       if (text) {
@@ -346,14 +362,16 @@ const createRefund = http.post(
             name: 'INTERNAL_SERVICE_ERROR',
             message: 'An internal error occurred while processing the refund.',
           },
-          { status: 500 }
+          { status: 500 },
         );
       }
 
       // Find order with this capture (check both captures map and orders)
       let order = state.captures.get(captureId);
       if (!order) {
-        order = Array.from(state.orders.values()).find((o) => o.captureId === captureId);
+        order = Array.from(state.orders.values()).find(
+          (o) => o.captureId === captureId,
+        );
       }
 
       // For testing, create a synthetic order if not found (allows direct refund tests)
@@ -385,7 +403,7 @@ const createRefund = http.post(
         ],
       });
     });
-  }
+  },
 );
 
 // =============================================================================
@@ -416,7 +434,7 @@ const verifyWebhook = http.post(
       ) {
         return HttpResponse.json(
           { name: 'INVALID_REQUEST', message: 'Missing required fields' },
-          { status: 400 }
+          { status: 400 },
         );
       }
 
@@ -427,7 +445,7 @@ const verifyWebhook = http.post(
         verification_status: isValid ? 'SUCCESS' : 'FAILURE',
       });
     });
-  }
+  },
 );
 
 // =============================================================================
@@ -443,7 +461,7 @@ export const paypalUnavailableHandler = http.all(`${PAYPAL_BASE_URL}/*`, () => {
       name: 'SERVICE_UNAVAILABLE',
       message: 'Service temporarily unavailable. Please try again later.',
     },
-    { status: 503 }
+    { status: 503 },
   );
 });
 
@@ -456,7 +474,7 @@ export const paypalRateLimitHandler = http.all(`${PAYPAL_BASE_URL}/*`, () => {
       name: 'RATE_LIMIT_REACHED',
       message: 'Too many requests. Retry after 60 seconds.',
     },
-    { status: 429, headers: { 'Retry-After': '60' } }
+    { status: 429, headers: { 'Retry-After': '60' } },
   );
 });
 

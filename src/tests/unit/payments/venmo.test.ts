@@ -3,12 +3,17 @@
  * Validates PayPal API integration for Venmo payments
  */
 
+import fc from 'fast-check';
 import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest';
 import { Effect } from 'effect';
 import { createVenmoAdapter } from '../../../payments/venmo.js';
 import type { PaymentAdapter } from '../../../payments/types.js';
 import { server } from '../../mocks/server.js';
-import { resetPayPalMockState, configurePayPalMock } from '../../mocks/handlers/index.js';
+import {
+  resetPayPalMockState,
+  configurePayPalMock,
+  getPayPalMockState,
+} from '../../mocks/handlers/index.js';
 import { expectSuccess, expectFailureTag } from '../../helpers/effect.js';
 
 // MSW server lifecycle
@@ -53,7 +58,7 @@ describe('Venmo Adapter', () => {
           currency: 'USD',
           description: 'TMD 60min massage',
           idempotencyKey: 'test-idempotency-key',
-        })
+        }),
       );
 
       expect(intent.id).toBeDefined();
@@ -71,7 +76,7 @@ describe('Venmo Adapter', () => {
           description: 'Massage session',
           metadata: { bookingId: '12345', serviceId: '67890' },
           idempotencyKey: 'test-meta-key',
-        })
+        }),
       );
 
       expect(intent.id).toBeDefined();
@@ -88,7 +93,7 @@ describe('Venmo Adapter', () => {
           description: 'Test payment',
           idempotencyKey: 'fail-key',
         }),
-        'PaymentError'
+        'PaymentError',
       );
 
       expect(error._tag).toBe('PaymentError');
@@ -97,6 +102,141 @@ describe('Venmo Adapter', () => {
         expect(error.processor).toBe('venmo');
         expect(error.recoverable).toBe(true);
       }
+    });
+
+    it('sends absolute return and cancel URLs to PayPal when configured', async () => {
+      const redirectAdapter = createVenmoAdapter({
+        type: 'venmo',
+        clientId: 'test-client-id',
+        clientSecret: 'test-client-secret',
+        environment: 'sandbox',
+        webhookId: 'test-webhook-id',
+        returnUrl:
+          'https://massageithaca-scheduling-bridge.taila4c78d.ts.net/booking',
+        cancelUrl:
+          'https://massageithaca-scheduling-bridge.taila4c78d.ts.net/booking',
+      });
+
+      await expectSuccess(
+        redirectAdapter.createIntent({
+          amount: 15500,
+          currency: 'USD',
+          description: 'TMD 1st Consultation & Session',
+          idempotencyKey: 'absolute-redirects',
+        }),
+      );
+
+      const body = getPayPalMockState().lastCreateOrderBody as {
+        payment_source?: {
+          venmo?: {
+            experience_context?: {
+              return_url?: string;
+              cancel_url?: string;
+            };
+          };
+        };
+      };
+      const context = body.payment_source?.venmo?.experience_context;
+
+      expect(context?.return_url).toBe(
+        'https://massageithaca-scheduling-bridge.taila4c78d.ts.net/booking',
+      );
+      expect(context?.cancel_url).toBe(
+        'https://massageithaca-scheduling-bridge.taila4c78d.ts.net/booking',
+      );
+    });
+
+    it('omits malformed or relative return and cancel URLs before PayPal sees them', async () => {
+      const redirectAdapter = createVenmoAdapter({
+        type: 'venmo',
+        clientId: 'test-client-id',
+        clientSecret: 'test-client-secret',
+        environment: 'sandbox',
+        webhookId: 'test-webhook-id',
+        returnUrl: '/booking',
+        cancelUrl: 'javascript:alert(1)',
+      });
+
+      await expectSuccess(
+        redirectAdapter.createIntent({
+          amount: 15500,
+          currency: 'USD',
+          description: 'TMD 1st Consultation & Session',
+          idempotencyKey: 'invalid-redirects',
+        }),
+      );
+
+      const body = getPayPalMockState().lastCreateOrderBody as {
+        payment_source?: {
+          venmo?: {
+            experience_context?: {
+              return_url?: string;
+              cancel_url?: string;
+            };
+          };
+        };
+      };
+      const context = body.payment_source?.venmo?.experience_context;
+
+      expect(context).not.toHaveProperty('return_url');
+      expect(context).not.toHaveProperty('cancel_url');
+    });
+
+    it('property: non-http(s) redirect URLs are never forwarded to PayPal', async () => {
+      await fc.assert(
+        fc.asyncProperty(
+          fc.string({ minLength: 1, maxLength: 80 }).filter((value) => {
+            const trimmed = value.trim();
+            if (trimmed.length === 0) return false;
+
+            try {
+              const parsed = new URL(trimmed);
+              return (
+                parsed.protocol !== 'http:' && parsed.protocol !== 'https:'
+              );
+            } catch {
+              return true;
+            }
+          }),
+          async (invalidUrl) => {
+            resetPayPalMockState();
+            const redirectAdapter = createVenmoAdapter({
+              type: 'venmo',
+              clientId: 'test-client-id',
+              clientSecret: 'test-client-secret',
+              environment: 'sandbox',
+              webhookId: 'test-webhook-id',
+              returnUrl: invalidUrl,
+              cancelUrl: invalidUrl,
+            });
+
+            await expectSuccess(
+              redirectAdapter.createIntent({
+                amount: 15500,
+                currency: 'USD',
+                description: 'TMD 1st Consultation & Session',
+                idempotencyKey: `invalid-redirect-${encodeURIComponent(invalidUrl).slice(0, 32)}`,
+              }),
+            );
+
+            const body = getPayPalMockState().lastCreateOrderBody as {
+              payment_source?: {
+                venmo?: {
+                  experience_context?: {
+                    return_url?: string;
+                    cancel_url?: string;
+                  };
+                };
+              };
+            };
+            const context = body.payment_source?.venmo?.experience_context;
+
+            expect(context).not.toHaveProperty('return_url');
+            expect(context).not.toHaveProperty('cancel_url');
+          },
+        ),
+        { numRuns: 25 },
+      );
     });
   });
 
@@ -109,7 +249,7 @@ describe('Venmo Adapter', () => {
           currency: 'USD',
           description: 'Test capture',
           idempotencyKey: 'capture-test-key',
-        })
+        }),
       );
 
       // Then capture it
@@ -128,7 +268,7 @@ describe('Venmo Adapter', () => {
 
       const error = await expectFailureTag(
         adapter.capturePayment('order_to_fail'),
-        'PaymentError'
+        'PaymentError',
       );
 
       expect(error._tag).toBe('PaymentError');
@@ -152,7 +292,7 @@ describe('Venmo Adapter', () => {
         adapter.refund({
           transactionId: 'capture_12345',
           reason: 'Customer requested cancellation',
-        })
+        }),
       );
 
       expect(refund.success).toBe(true);
@@ -168,7 +308,7 @@ describe('Venmo Adapter', () => {
           transactionId: 'capture_67890',
           amount: 10000, // $100 partial refund
           reason: 'Partial service',
-        })
+        }),
       );
 
       expect(refund.success).toBe(true);
@@ -183,7 +323,7 @@ describe('Venmo Adapter', () => {
           transactionId: 'capture_fail',
           reason: 'Test failure',
         }),
-        'PaymentError'
+        'PaymentError',
       );
 
       expect(error._tag).toBe('PaymentError');
@@ -280,7 +420,7 @@ describe('Venmo Adapter', () => {
     it('handles invalid JSON payload', async () => {
       const error = await expectFailureTag(
         adapter.parseWebhook('invalid json'),
-        'PaymentError'
+        'PaymentError',
       );
 
       expect(error._tag).toBe('PaymentError');
@@ -314,7 +454,7 @@ describe('Venmo Adapter Transformers', () => {
           currency: 'USD',
           description: 'Minimum amount',
           idempotencyKey: 'min-amount-key',
-        })
+        }),
       );
 
       // Mock returns what we sent, verify it's correct
@@ -348,7 +488,7 @@ describe('Venmo Adapter Transformers', () => {
           currency: 'USD',
           description: 'Status test',
           idempotencyKey: 'status-test-key',
-        })
+        }),
       );
 
       expect(intent.status).toBe('pending');
