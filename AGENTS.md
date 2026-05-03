@@ -38,7 +38,7 @@ The package should be reusable across multiple businesses. Avoid app-specific as
 
 ## Current Tracking
 
-As of `2026-04-25`, the active structural work is no longer just downstream
+As of `2026-05-02`, the active structural work is no longer just downstream
 contract cleanup. It is release-authority, artifact-truth, and runner-contract
 convergence.
 
@@ -49,6 +49,7 @@ Active threads:
 - `TIN-165` bazel-registry generation from standalone package truth
 - release, tag, npm, and GitHub release authority cleanup tracked in GitHub
   issue `#73`
+- downstream Bzlmod consumer builds of `//:pkg` from the active registry
 - runner reachability and shared-runner proof before treating package CI as a
   stable public workflow contract
 
@@ -56,10 +57,12 @@ Current operational truth:
 
 - local development should default to `jesssullivan/main`
 - that branch is the current functional release line
-- current package metadata on `main` is `@tummycrypt/scheduling-kit` `0.7.2`
-- as of `2026-04-25`, npm `latest` is `0.7.2`; the matching GitHub release
-  was not present when checked, so keep `#73` open until tag/release authority
-  is reconciled
+- current published package truth is `@tummycrypt/scheduling-kit` `0.7.5`
+  on npm, GitHub Releases, and the active tinyland Bazel registry
+- the `0.7.6` lane fixes downstream Bzlmod `//:pkg` consumption by making the
+  Svelte package build independent of main-workspace-relative `src` paths
+- keep `#73` open until the next package release/tag/registry pass proves the
+  updated Bazel consumer path end to end
 - `tinyland-inc/origin/main` is now a downstream mirror/validation surface,
   not an equally authoritative release surface
 - package metadata, git tags, npm dist-tags, and GitHub releases are separate

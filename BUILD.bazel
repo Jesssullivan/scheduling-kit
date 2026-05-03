@@ -16,7 +16,8 @@ Subpackage structure:
   //src/testing      - Mock helpers, MSW handlers
 """
 
-load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
+load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
 load("@aspect_rules_js//npm:defs.bzl", "npm_package")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
 load("@tummycrypt_scheduling_kit_npm//:defs.bzl", "npm_link_all_packages")
@@ -46,12 +47,23 @@ svelte_kit.svelte_kit_binary(
     visibility = ["//visibility:public"],
 )
 
+js_binary(
+    name = "bazel_svelte_package",
+    entry_point = "scripts/svelte-package-bazel-wrapper.mjs",
+    data = [
+        ":node_modules/@sveltejs/package",
+        ":node_modules/svelte",
+        ":node_modules/typescript",
+    ],
+)
+
 # svelte-check and Vitest both read tsconfig.json, which extends the generated
 # .svelte-kit/tsconfig.json. Mirror the pnpm scripts' required sync step.
 js_run_binary(
     name = "svelte_kit_sync",
     tags = ["manual"],
     tool = ":svelte_kit",
+    chdir = ".",
     srcs = glob([
         "src/**/*.ts",
         "src/**/*.svelte",
@@ -74,22 +86,32 @@ js_run_binary(
 # components, .svelte.ts stores, and plain .ts files in one pass.
 # =============================================================================
 
+SCHEDULING_KIT_PACKAGE_SOURCES = glob(
+    [
+        "src/**/*.ts",
+        "src/**/*.svelte",
+        "src/**/*.svelte.ts",
+    ],
+    exclude = [
+        "src/**/*.test.ts",
+        "src/**/*.spec.ts",
+        "src/tests/**",
+    ],
+)
+
+copy_to_directory(
+    name = "scheduling_kit_src",
+    srcs = SCHEDULING_KIT_PACKAGE_SOURCES,
+    out = "scheduling_kit_src",
+    root_paths = ["src"],
+)
+
 js_run_binary(
     name = "scheduling_kit_build",
     tags = ["manual"],
-    tool = ":svelte_package",
-    srcs = glob(
-        [
-            "src/**/*.ts",
-            "src/**/*.svelte",
-            "src/**/*.svelte.ts",
-        ],
-        exclude = [
-            "src/**/*.test.ts",
-            "src/**/*.spec.ts",
-            "src/tests/**",
-        ],
-    ) + [
+    tool = ":bazel_svelte_package",
+    srcs = [
+        ":scheduling_kit_src",
         "package.json",
         "svelte.config.js",
         "tsconfig.json",
@@ -98,7 +120,7 @@ js_run_binary(
     ],
     args = [
         "-i",
-        "src",
+        "$(execpath :scheduling_kit_src)",
         "-o",
         "dist",
     ],
@@ -127,7 +149,7 @@ npm_package(
     ],
     package = "@tummycrypt/scheduling-kit",
     tags = ["manual"],
-    version = "0.7.5",
+    version = "0.7.6",
     visibility = ["//visibility:public"],
 )
 
@@ -283,6 +305,7 @@ js_run_binary(
     name = "typecheck",
     tags = ["manual"],
     tool = ":svelte_check",
+    chdir = ".",
     srcs = glob(
         [
             "src/**/*.ts",
