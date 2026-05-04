@@ -25,7 +25,13 @@ import type {
 
 interface PayPalOrder {
   id: string;
-  status: 'CREATED' | 'SAVED' | 'APPROVED' | 'VOIDED' | 'COMPLETED' | 'PAYER_ACTION_REQUIRED';
+  status:
+    | 'CREATED'
+    | 'SAVED'
+    | 'APPROVED'
+    | 'VOIDED'
+    | 'COMPLETED'
+    | 'PAYER_ACTION_REQUIRED';
   purchase_units: {
     reference_id: string;
     amount: {
@@ -61,10 +67,31 @@ interface PayPalRefund {
 // VENMO ADAPTER IMPLEMENTATION
 // =============================================================================
 
-export const createVenmoAdapter = (config: VenmoAdapterConfig): PaymentAdapter => {
-  const baseUrl = config.environment === 'production'
-    ? 'https://api-m.paypal.com'
-    : 'https://api-m.sandbox.paypal.com';
+const sanitizePayPalRedirectUrl = (url?: string): string | undefined => {
+  const trimmed = url?.trim();
+  if (!trimmed) return undefined;
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return undefined;
+    }
+
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+};
+
+export const createVenmoAdapter = (
+  config: VenmoAdapterConfig,
+): PaymentAdapter => {
+  const baseUrl =
+    config.environment === 'production'
+      ? 'https://api-m.paypal.com'
+      : 'https://api-m.sandbox.paypal.com';
+  const returnUrl = sanitizePayPalRedirectUrl(config.returnUrl);
+  const cancelUrl = sanitizePayPalRedirectUrl(config.cancelUrl);
 
   let accessToken: string | null = null;
   let tokenExpiry: number = 0;
@@ -78,11 +105,13 @@ export const createVenmoAdapter = (config: VenmoAdapterConfig): PaymentAdapter =
       return accessToken;
     }
 
-    const auth = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64');
+    const auth = Buffer.from(
+      `${config.clientId}:${config.clientSecret}`,
+    ).toString('base64');
     const response = await fetch(`${baseUrl}/v1/oauth2/token`, {
       method: 'POST',
       headers: {
-        'Authorization': `Basic ${auth}`,
+        Authorization: `Basic ${auth}`,
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: 'grant_type=client_credentials',
@@ -92,7 +121,10 @@ export const createVenmoAdapter = (config: VenmoAdapterConfig): PaymentAdapter =
       throw new Error(`PayPal auth failed: ${response.status}`);
     }
 
-    const data = await response.json() as { access_token: string; expires_in: number };
+    const data = (await response.json()) as {
+      access_token: string;
+      expires_in: number;
+    };
     accessToken = data.access_token;
     tokenExpiry = Date.now() + (data.expires_in - 60) * 1000; // Refresh 1 min early
 
@@ -107,11 +139,11 @@ export const createVenmoAdapter = (config: VenmoAdapterConfig): PaymentAdapter =
     method: string,
     endpoint: string,
     body?: unknown,
-    idempotencyKey?: string
+    idempotencyKey?: string,
   ): Promise<T> => {
     const token = await getAccessToken();
     const headers: Record<string, string> = {
-      'Authorization': `Bearer ${token}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     };
 
@@ -141,16 +173,27 @@ export const createVenmoAdapter = (config: VenmoAdapterConfig): PaymentAdapter =
   // Transformers
   // ---------------------------------------------------------------------------
 
-  const toPaymentIntent = (order: PayPalOrder, requestAmount?: number, requestCurrency?: string): PaymentIntent => ({
+  const toPaymentIntent = (
+    order: PayPalOrder,
+    requestAmount?: number,
+    requestCurrency?: string,
+  ): PaymentIntent => ({
     id: order.id,
     amount: order.purchase_units?.[0]?.amount?.value
       ? Math.round(parseFloat(order.purchase_units[0].amount.value) * 100)
-      : requestAmount ?? 0,
-    currency: order.purchase_units?.[0]?.amount?.currency_code ?? requestCurrency ?? 'USD',
-    status: order.status === 'COMPLETED' ? 'completed'
-      : order.status === 'APPROVED' ? 'processing'
-      : order.status === 'VOIDED' ? 'cancelled'
-      : 'pending',
+      : (requestAmount ?? 0),
+    currency:
+      order.purchase_units?.[0]?.amount?.currency_code ??
+      requestCurrency ??
+      'USD',
+    status:
+      order.status === 'COMPLETED'
+        ? 'completed'
+        : order.status === 'APPROVED'
+          ? 'processing'
+          : order.status === 'VOIDED'
+            ? 'cancelled'
+            : 'pending',
     processor: 'venmo',
     processorTransactionId: order.id,
     createdAt: order.create_time ?? new Date().toISOString(),
@@ -163,8 +206,11 @@ export const createVenmoAdapter = (config: VenmoAdapterConfig): PaymentAdapter =
       success: order.status === 'COMPLETED',
       transactionId: capture?.id ?? order.id,
       processor: 'venmo',
-      amount: Math.round(parseFloat(capture?.amount?.value ?? unitAmount?.value ?? '0') * 100),
-      currency: capture?.amount?.currency_code ?? unitAmount?.currency_code ?? 'USD',
+      amount: Math.round(
+        parseFloat(capture?.amount?.value ?? unitAmount?.value ?? '0') * 100,
+      ),
+      currency:
+        capture?.amount?.currency_code ?? unitAmount?.currency_code ?? 'USD',
       timestamp: new Date().toISOString(),
     };
   };
@@ -180,51 +226,74 @@ export const createVenmoAdapter = (config: VenmoAdapterConfig): PaymentAdapter =
 
     isAvailable: () => Effect.succeed(true),
 
-    createIntent: ({ amount, currency, description, metadata, idempotencyKey }) =>
+    createIntent: ({
+      amount,
+      currency,
+      description,
+      metadata,
+      idempotencyKey,
+    }) =>
       pipe(
         fromPromise(
-          () => request<PayPalOrder>(
-            'POST',
-            '/v2/checkout/orders',
-            {
-              intent: 'CAPTURE',
-              purchase_units: [{
-                reference_id: idempotencyKey,
-                description,
-                amount: {
-                  currency_code: currency,
-                  value: (amount / 100).toFixed(2),
-                },
-                ...(config.payeeEmail ? { payee: { email_address: config.payeeEmail } } : {}),
-                custom_id: metadata ? JSON.stringify(metadata) : undefined,
-              }],
-              payment_source: {
-                venmo: {
-                  experience_context: {
-                    payment_method_preference: 'IMMEDIATE_PAYMENT_REQUIRED',
-                    brand_name: config.brandName ?? 'Business',
-                    shipping_preference: 'NO_SHIPPING',
-                    user_action: 'PAY_NOW',
-                    ...(config.returnUrl ? { return_url: config.returnUrl } : {}),
-                    ...(config.cancelUrl ? { cancel_url: config.cancelUrl } : {}),
+          () =>
+            request<PayPalOrder>(
+              'POST',
+              '/v2/checkout/orders',
+              {
+                intent: 'CAPTURE',
+                purchase_units: [
+                  {
+                    reference_id: idempotencyKey,
+                    description,
+                    amount: {
+                      currency_code: currency,
+                      value: (amount / 100).toFixed(2),
+                    },
+                    ...(config.payeeEmail
+                      ? { payee: { email_address: config.payeeEmail } }
+                      : {}),
+                    custom_id: metadata ? JSON.stringify(metadata) : undefined,
+                  },
+                ],
+                payment_source: {
+                  venmo: {
+                    experience_context: {
+                      payment_method_preference: 'IMMEDIATE_PAYMENT_REQUIRED',
+                      brand_name: config.brandName ?? 'Business',
+                      shipping_preference: 'NO_SHIPPING',
+                      user_action: 'PAY_NOW',
+                      ...(returnUrl ? { return_url: returnUrl } : {}),
+                      ...(cancelUrl ? { cancel_url: cancelUrl } : {}),
+                    },
                   },
                 },
               },
-            },
-            idempotencyKey
-          ),
-          (e) => Errors.payment('CREATE_INTENT_FAILED', String(e), 'venmo', true)
+              idempotencyKey,
+            ),
+          (e) =>
+            Errors.payment('CREATE_INTENT_FAILED', String(e), 'venmo', true),
         ),
-        Effect.map((order) => toPaymentIntent(order, amount, currency))
+        Effect.map((order) => toPaymentIntent(order, amount, currency)),
       ),
 
     capturePayment: (intentId) =>
       pipe(
         fromPromise(
-          () => request<PayPalOrder>('POST', `/v2/checkout/orders/${intentId}/capture`),
-          (e) => Errors.payment('CAPTURE_FAILED', String(e), 'venmo', false, intentId)
+          () =>
+            request<PayPalOrder>(
+              'POST',
+              `/v2/checkout/orders/${intentId}/capture`,
+            ),
+          (e) =>
+            Errors.payment(
+              'CAPTURE_FAILED',
+              String(e),
+              'venmo',
+              false,
+              intentId,
+            ),
         ),
-        Effect.map(toPaymentResult)
+        Effect.map(toPaymentResult),
       ),
 
     cancelIntent: (intentId) =>
@@ -236,15 +305,25 @@ export const createVenmoAdapter = (config: VenmoAdapterConfig): PaymentAdapter =
             // For now, just return success - orders expire automatically
             console.log(`Venmo intent ${intentId} cancellation requested`);
           },
-          (e) => Errors.payment('CANCEL_FAILED', String(e), 'venmo', false, intentId)
-        )
+          (e) =>
+            Errors.payment(
+              'CANCEL_FAILED',
+              String(e),
+              'venmo',
+              false,
+              intentId,
+            ),
+        ),
       ),
 
     refund: ({ transactionId, amount, reason }) =>
       pipe(
         fromPromise(
           async () => {
-            const body: { amount?: { currency_code: string; value: string }; note_to_payer?: string } = {};
+            const body: {
+              amount?: { currency_code: string; value: string };
+              note_to_payer?: string;
+            } = {};
 
             if (amount) {
               body.amount = {
@@ -260,10 +339,17 @@ export const createVenmoAdapter = (config: VenmoAdapterConfig): PaymentAdapter =
             return request<PayPalRefund>(
               'POST',
               `/v2/payments/captures/${transactionId}/refund`,
-              Object.keys(body).length > 0 ? body : undefined
+              Object.keys(body).length > 0 ? body : undefined,
             );
           },
-          (e) => Errors.payment('REFUND_FAILED', String(e), 'venmo', false, transactionId)
+          (e) =>
+            Errors.payment(
+              'REFUND_FAILED',
+              String(e),
+              'venmo',
+              false,
+              transactionId,
+            ),
         ),
         Effect.map((refund) => ({
           success: refund.status === 'COMPLETED',
@@ -272,10 +358,16 @@ export const createVenmoAdapter = (config: VenmoAdapterConfig): PaymentAdapter =
           amount: Math.round(parseFloat(refund.amount.value) * 100),
           currency: refund.amount.currency_code,
           timestamp: refund.create_time,
-        }))
+        })),
       ),
 
-    verifyWebhook: ({ payload, signature, transmissionId, transmissionTime, certUrl }) =>
+    verifyWebhook: ({
+      payload,
+      signature,
+      transmissionId,
+      transmissionTime,
+      certUrl,
+    }) =>
       pipe(
         fromPromise(
           async () => {
@@ -291,13 +383,14 @@ export const createVenmoAdapter = (config: VenmoAdapterConfig): PaymentAdapter =
                 transmission_time: transmissionTime ?? '',
                 webhook_id: config.webhookId,
                 webhook_event: JSON.parse(payload),
-              }
+              },
             );
 
             return response.verification_status === 'SUCCESS';
           },
-          (e) => Errors.payment('WEBHOOK_VERIFY_FAILED', String(e), 'venmo', false)
-        )
+          (e) =>
+            Errors.payment('WEBHOOK_VERIFY_FAILED', String(e), 'venmo', false),
+        ),
       ),
 
     parseWebhook: (payload) =>
@@ -331,7 +424,8 @@ export const createVenmoAdapter = (config: VenmoAdapterConfig): PaymentAdapter =
             raw: event,
           } satisfies PaymentWebhookEvent;
         },
-        catch: (e) => Errors.payment('WEBHOOK_PARSE_FAILED', String(e), 'venmo', false),
+        catch: (e) =>
+          Errors.payment('WEBHOOK_PARSE_FAILED', String(e), 'venmo', false),
       }),
 
     getClientConfig: () => ({
