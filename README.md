@@ -178,8 +178,8 @@ import {
   createHomegrownAdapter,
   type HomegrownAdapterSchemas,
 } from '@tummycrypt/scheduling-kit/adapters';
-import * as contentSchema from '@your-org/business-pg/content-schema';
-import * as bookingSchema from '@your-org/business-pg/booking-schema';
+import * as contentSchema from '@tummycrypt/tinyland-business-pg/content-schema';
+import * as bookingSchema from '@tummycrypt/tinyland-business-pg/booking-schema';
 
 const schemas: HomegrownAdapterSchemas = {
   content: contentSchema,
