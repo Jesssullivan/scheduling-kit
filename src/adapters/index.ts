@@ -16,6 +16,10 @@ export { createCalComAdapter } from './calcom.js';
 export {
   createHomegrownAdapter,
   type HomegrownAdapterConfig,
+  type HomegrownAdapterSchemas,
+  type HomegrownAdapterSchemaProvider,
+  type HomegrownBookingSchemaTables,
+  type HomegrownContentSchemaTables,
 } from './homegrown.js';
 
 // Availability Engine (pure functions)

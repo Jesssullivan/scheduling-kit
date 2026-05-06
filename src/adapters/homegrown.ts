@@ -40,6 +40,29 @@ import {
 // Config
 // ---------------------------------------------------------------------------
 
+export interface HomegrownContentSchemaTables {
+  services: any;
+  practitioners: any;
+  businessHours: any;
+}
+
+export interface HomegrownBookingSchemaTables {
+  bookings: any;
+  timeBlocks: any;
+  slotReservations: any;
+  clients: any;
+  businessHoursOverrides: any;
+}
+
+export interface HomegrownAdapterSchemas {
+  content: HomegrownContentSchemaTables;
+  booking: HomegrownBookingSchemaTables;
+}
+
+export type HomegrownAdapterSchemaProvider =
+  | HomegrownAdapterSchemas
+  | (() => Promise<HomegrownAdapterSchemas>);
+
 export interface HomegrownAdapterConfig {
   /** Drizzle database instance (lazy, to avoid import-time DB connection). */
   getDb?: () => Promise<any>;
@@ -52,6 +75,14 @@ export interface HomegrownAdapterConfig {
    * awaits the callback result before leaving the scope.
    */
   withDb?: <T>(fn: (db: any) => Promise<T>) => Promise<T>;
+  /**
+   * Drizzle table modules used by the homegrown scheduling backend.
+   *
+   * Pass this to keep scheduling-kit independent from any specific schema
+   * package. If omitted, the adapter falls back to the legacy
+   * @tummycrypt/tinyland-auth-pg schema exports for existing adopters.
+   */
+  schemas?: HomegrownAdapterSchemaProvider;
   /** Timezone for availability calculations */
   timezone?: string;
   /** Slot interval in minutes */
@@ -80,10 +111,56 @@ export const createHomegrownAdapter = (
   const buffer = config.bufferMinutes ?? 0;
   const minAdvance = config.minAdvanceHours ?? 2;
   const practitionerHandle = config.defaultPractitionerHandle ?? "jen";
+  let legacySchemasPromise: Promise<HomegrownAdapterSchemas> | undefined;
 
   const withDb = async <T>(fn: (db: any) => Promise<T>): Promise<T> => {
     if (config.withDb) return config.withDb(fn);
     return fn(await config.getDb!());
+  };
+
+  const loadLegacyAuthPgSchemas =
+    async (): Promise<HomegrownAdapterSchemas> => {
+      const importOptional = (specifier: string): Promise<any> =>
+        import(specifier);
+
+      try {
+        const [content, booking] = await Promise.all([
+          importOptional("@tummycrypt/tinyland-auth-pg/content-schema"),
+          importOptional("@tummycrypt/tinyland-auth-pg/booking-schema"),
+        ]);
+
+        return {
+          content: {
+            services: content.services,
+            practitioners: content.practitioners,
+            businessHours: content.businessHours,
+          },
+          booking: {
+            bookings: booking.bookings,
+            timeBlocks: booking.timeBlocks,
+            slotReservations: booking.slotReservations,
+            clients: booking.clients,
+            businessHoursOverrides: booking.businessHoursOverrides,
+          },
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `HomegrownAdapter could not load legacy @tummycrypt/tinyland-auth-pg schemas. Pass config.schemas to use a dedicated schema package. Cause: ${message}`,
+        );
+      }
+    };
+
+  const loadSchemas = async (): Promise<HomegrownAdapterSchemas> => {
+    if (typeof config.schemas === "function") {
+      return config.schemas();
+    }
+    if (config.schemas) {
+      return config.schemas;
+    }
+
+    legacySchemasPromise ??= loadLegacyAuthPgSchemas();
+    return legacySchemasPromise;
   };
 
   // ---------------------------------------------------------------------------
@@ -104,8 +181,7 @@ export const createHomegrownAdapter = (
 
   /** Resolve a service by UUID or acuityId */
   const resolveService = async (serviceId: string): Promise<any> => {
-    const { services: servicesTable } =
-      await import("@tummycrypt/tinyland-auth-pg/content-schema");
+    const { services: servicesTable } = (await loadSchemas()).content;
     const { eq, or } = await import("drizzle-orm");
 
     // UUID regex — only compare against UUID column if input looks like one
@@ -134,8 +210,7 @@ export const createHomegrownAdapter = (
 
   /** Load business hours as a Map<dayOfWeek, HoursWindow> */
   const loadHoursMap = async (): Promise<Map<number, HoursWindow>> => {
-    const { businessHours } =
-      await import("@tummycrypt/tinyland-auth-pg/content-schema");
+    const { businessHours } = (await loadSchemas()).content;
     const { asc } = await import("drizzle-orm");
     return withDb(async (d) => {
       const rows = await d
@@ -155,8 +230,7 @@ export const createHomegrownAdapter = (
     startDate: string,
     endDate: string,
   ): Promise<HoursOverride[]> => {
-    const { businessHoursOverrides } =
-      await import("@tummycrypt/tinyland-auth-pg/booking-schema");
+    const { businessHoursOverrides } = (await loadSchemas()).booking;
     const { gte, lte, and } = await import("drizzle-orm");
     return withDb(async (d) => {
       const rows = await d
@@ -185,7 +259,7 @@ export const createHomegrownAdapter = (
       bookings: bookingsTable,
       timeBlocks,
       slotReservations,
-    } = await import("@tummycrypt/tinyland-auth-pg/booking-schema");
+    } = (await loadSchemas()).booking;
     const { gte, lte, and, ne, isNull, or, gt } = await import("drizzle-orm");
 
     const startIso = `${startDate}T00:00:00Z`;
@@ -265,8 +339,7 @@ export const createHomegrownAdapter = (
 
   /** Get the default practitioner */
   const getDefaultPractitioner = async (): Promise<any> => {
-    const { practitioners } =
-      await import("@tummycrypt/tinyland-auth-pg/content-schema");
+    const { practitioners } = (await loadSchemas()).content;
     const { eq } = await import("drizzle-orm");
     return withDb(async (d) => {
       const [row] = await d
@@ -282,10 +355,9 @@ export const createHomegrownAdapter = (
     d: any,
     bookingId: string,
   ): Promise<Booking> => {
-    const { bookings: bookingsTable, clients: clientsTable } =
-      await import("@tummycrypt/tinyland-auth-pg/booking-schema");
-    const { services: servicesTable, practitioners } =
-      await import("@tummycrypt/tinyland-auth-pg/content-schema");
+    const { content, booking } = await loadSchemas();
+    const { bookings: bookingsTable, clients: clientsTable } = booking;
+    const { services: servicesTable, practitioners } = content;
     const { eq } = await import("drizzle-orm");
 
     const [row] = await d
@@ -354,8 +426,7 @@ export const createHomegrownAdapter = (
 
     getServices: () =>
       fromAsync(async () => {
-        const { services: servicesTable } =
-          await import("@tummycrypt/tinyland-auth-pg/content-schema");
+        const { services: servicesTable } = (await loadSchemas()).content;
         const { asc, eq } = await import("drizzle-orm");
         const rows = await withDb<any[]>((d) =>
           d
@@ -416,8 +487,7 @@ export const createHomegrownAdapter = (
 
     getProvider: (providerId: string) =>
       fromAsync(async () => {
-        const { practitioners } =
-          await import("@tummycrypt/tinyland-auth-pg/content-schema");
+        const { practitioners } = (await loadSchemas()).content;
         const { eq } = await import("drizzle-orm");
         const [row] = await withDb<any[]>((d) =>
           d
@@ -540,8 +610,7 @@ export const createHomegrownAdapter = (
 
     createReservation: (params) =>
       fromAsync(async () => {
-        const { slotReservations } =
-          await import("@tummycrypt/tinyland-auth-pg/booking-schema");
+        const { slotReservations } = (await loadSchemas()).booking;
         const expirationMinutes = params.expirationMinutes ?? 10;
         const expiresAt = new Date(
           Date.now() + expirationMinutes * 60_000,
@@ -569,8 +638,7 @@ export const createHomegrownAdapter = (
 
     releaseReservation: (reservationId: string) =>
       fromAsync(async () => {
-        const { slotReservations } =
-          await import("@tummycrypt/tinyland-auth-pg/booking-schema");
+        const { slotReservations } = (await loadSchemas()).booking;
         const { eq } = await import("drizzle-orm");
         await withDb((d) =>
           d
@@ -584,8 +652,7 @@ export const createHomegrownAdapter = (
 
     createBooking: (request: BookingRequest) =>
       fromAsync(async () => {
-        const { bookings: bookingsTable } =
-          await import("@tummycrypt/tinyland-auth-pg/booking-schema");
+        const { bookings: bookingsTable } = (await loadSchemas()).booking;
 
         // Resolve service (by UUID or acuityId)
         const svc = await resolveService(request.serviceId);
@@ -652,8 +719,7 @@ export const createHomegrownAdapter = (
     ) =>
       Effect.flatMap(adapter.createBooking(request), (booking) =>
         fromAsync(async () => {
-          const { bookings: bookingsTable } =
-            await import("@tummycrypt/tinyland-auth-pg/booking-schema");
+          const { bookings: bookingsTable } = (await loadSchemas()).booking;
           const { eq } = await import("drizzle-orm");
 
           await withDb((d) =>
@@ -682,8 +748,7 @@ export const createHomegrownAdapter = (
 
     cancelBooking: (bookingId: string, reason?: string) =>
       fromAsync(async () => {
-        const { bookings: bookingsTable } =
-          await import("@tummycrypt/tinyland-auth-pg/booking-schema");
+        const { bookings: bookingsTable } = (await loadSchemas()).booking;
         const { eq } = await import("drizzle-orm");
 
         await withDb((d) =>
@@ -701,8 +766,7 @@ export const createHomegrownAdapter = (
 
     rescheduleBooking: (bookingId: string, newDatetime: string) =>
       fromAsync(async () => {
-        const { bookings: bookingsTable } =
-          await import("@tummycrypt/tinyland-auth-pg/booking-schema");
+        const { bookings: bookingsTable } = (await loadSchemas()).booking;
         const { eq } = await import("drizzle-orm");
 
         return withDb(async (d) => {
@@ -734,8 +798,7 @@ export const createHomegrownAdapter = (
 
     findOrCreateClient: (client: ClientInfo) =>
       fromAsync(async () => {
-        const { clients: clientsTable } =
-          await import("@tummycrypt/tinyland-auth-pg/booking-schema");
+        const { clients: clientsTable } = (await loadSchemas()).booking;
         const { eq } = await import("drizzle-orm");
         return withDb(async (d) => {
           // Try to find existing
@@ -779,8 +842,7 @@ export const createHomegrownAdapter = (
 
     getClientByEmail: (email: string) =>
       fromAsync(async () => {
-        const { clients: clientsTable } =
-          await import("@tummycrypt/tinyland-auth-pg/booking-schema");
+        const { clients: clientsTable } = (await loadSchemas()).booking;
         const { eq } = await import("drizzle-orm");
         const [row] = await withDb<any[]>((d) =>
           d

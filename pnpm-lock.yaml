@@ -14,9 +14,6 @@ importers:
       '@skeletonlabs/skeleton-svelte':
         specifier: ^4.0.0
         version: 4.13.0(svelte@5.54.1)
-      '@tummycrypt/tinyland-auth-pg':
-        specifier: ^0.2.1
-        version: 0.2.1(@tummycrypt/tinyland-auth@0.2.0(@sveltejs/kit@2.55.0(@sveltejs/vite-plugin-svelte@6.2.4(svelte@5.54.1)(vite@6.4.1(@types/node@20.19.37)))(svelte@5.54.1)(typescript@5.9.3)(vite@6.4.1(@types/node@20.19.37)))(svelte@5.54.1))(@types/pg@8.11.6)
       drizzle-orm:
         specifier: 0.39.3
         version: 0.39.3(@neondatabase/serverless@0.10.4)(@types/pg@8.11.6)(pg@8.20.0)
@@ -45,6 +42,9 @@ importers:
       '@testing-library/svelte':
         specifier: ^5.3.1
         version: 5.3.1(svelte@5.54.1)(vite@6.4.1(@types/node@20.19.37))(vitest@4.1.0(@types/node@20.19.37)(jsdom@28.1.0)(msw@2.7.0(@types/node@20.19.37)(typescript@5.9.3))(vite@6.4.1(@types/node@20.19.37)))
+      '@tummycrypt/tinyland-auth-pg':
+        specifier: ^0.2.4
+        version: 0.2.4(@tummycrypt/tinyland-auth@0.2.0(@sveltejs/kit@2.55.0(@sveltejs/vite-plugin-svelte@6.2.4(svelte@5.54.1)(vite@6.4.1(@types/node@20.19.37)))(svelte@5.54.1)(typescript@5.9.3)(vite@6.4.1(@types/node@20.19.37)))(svelte@5.54.1))(@types/pg@8.11.6)
       '@types/node':
         specifier: ^20.0.0
         version: 20.19.37
@@ -738,10 +738,10 @@ packages:
       vitest:
         optional: true
 
-  '@tummycrypt/tinyland-auth-pg@0.2.1':
-    resolution: {integrity: sha512-4xzcLu64OmaHKsaVOgXoSJ6oaIrp1+tgDoNvKcqIXuELCaaT14ifXaU00RWQjDJDQOx4iIiPgvAoL8P2pi2j8w==}
+  '@tummycrypt/tinyland-auth-pg@0.2.4':
+    resolution: {integrity: sha512-Z4n8R4iD7+CWqmwEDDu919jIWwiW66Oq/48YSrdKQ+rqO61+ZiPfnEA7G++aMaVU3G96DkK46+KNtbOY4ZffKw==}
     peerDependencies:
-      '@tummycrypt/tinyland-auth': ^0.2.0
+      '@tummycrypt/tinyland-auth': ^0.2.0 || ^0.3.0
 
   '@tummycrypt/tinyland-auth@0.2.0':
     resolution: {integrity: sha512-XL3UfRyBNeuILZw56r5iw+WtUAZ0l7f5zjbDsHGOeR5O0D0rpRZjUMSTqNoHWYjU4NkKl07YKmDphXsTwC6dLA==}
@@ -2865,7 +2865,7 @@ snapshots:
       vite: 6.4.1(@types/node@20.19.37)
       vitest: 4.1.0(@types/node@20.19.37)(jsdom@28.1.0)(msw@2.7.0(@types/node@20.19.37)(typescript@5.9.3))(vite@6.4.1(@types/node@20.19.37))
 
-  '@tummycrypt/tinyland-auth-pg@0.2.1(@tummycrypt/tinyland-auth@0.2.0(@sveltejs/kit@2.55.0(@sveltejs/vite-plugin-svelte@6.2.4(svelte@5.54.1)(vite@6.4.1(@types/node@20.19.37)))(svelte@5.54.1)(typescript@5.9.3)(vite@6.4.1(@types/node@20.19.37)))(svelte@5.54.1))(@types/pg@8.11.6)':
+  '@tummycrypt/tinyland-auth-pg@0.2.4(@tummycrypt/tinyland-auth@0.2.0(@sveltejs/kit@2.55.0(@sveltejs/vite-plugin-svelte@6.2.4(svelte@5.54.1)(vite@6.4.1(@types/node@20.19.37)))(svelte@5.54.1)(typescript@5.9.3)(vite@6.4.1(@types/node@20.19.37)))(svelte@5.54.1))(@types/pg@8.11.6)':
     dependencies:
       '@neondatabase/serverless': 0.10.4
       '@tummycrypt/tinyland-auth': 0.2.0(@sveltejs/kit@2.55.0(@sveltejs/vite-plugin-svelte@6.2.4(svelte@5.54.1)(vite@6.4.1(@types/node@20.19.37)))(svelte@5.54.1)(typescript@5.9.3)(vite@6.4.1(@types/node@20.19.37)))(svelte@5.54.1)

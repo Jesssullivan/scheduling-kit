@@ -119,7 +119,11 @@ import {
 
 // Create a scheduling adapter
 const scheduler = createHomegrownAdapter({
-  db: drizzleInstance,
+  withDb: async (fn) => fn(drizzleInstance),
+  schemas: {
+    content: contentSchema,
+    booking: bookingSchema,
+  },
   timezone: 'America/New_York',
 });
 
@@ -170,16 +174,32 @@ Direct PostgreSQL adapter using Drizzle ORM. Replaces third-party scheduling
 APIs entirely.
 
 ```typescript
-import { createHomegrownAdapter } from '@tummycrypt/scheduling-kit/adapters';
+import {
+  createHomegrownAdapter,
+  type HomegrownAdapterSchemas,
+} from '@tummycrypt/scheduling-kit/adapters';
+import * as contentSchema from '@your-org/business-pg/content-schema';
+import * as bookingSchema from '@your-org/business-pg/booking-schema';
+
+const schemas: HomegrownAdapterSchemas = {
+  content: contentSchema,
+  booking: bookingSchema,
+};
 
 const adapter = createHomegrownAdapter({
-  db: drizzleInstance,
+  withDb: async (fn) => fn(drizzleInstance),
+  schemas,
   timezone: 'America/New_York',
 });
 
 // 16 methods: getServices, getAvailability, getSlots, book, cancel,
 // reschedule, ...
 ```
+
+`schemas` is the preferred boundary for reusable adopters. It lets the
+homegrown backend use whichever Drizzle schema package owns business and
+booking tables. Existing adopters may still omit it if they intentionally use
+the legacy optional `@tummycrypt/tinyland-auth-pg` schema exports.
 
 ### AcuityAdapter
 

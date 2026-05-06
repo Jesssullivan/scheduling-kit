@@ -1,6 +1,6 @@
 {
   "name": "@tummycrypt/scheduling-kit",
-  "version": "0.7.7",
+  "version": "0.7.8",
   "description": "Backend-agnostic scheduling components with alternative payment support",
   "type": "module",
   "packageManager": "pnpm@9.15.9",
@@ -87,11 +87,15 @@
     "traces:refresh": "npx tsx scripts/refresh-traces.ts"
   },
   "peerDependencies": {
+    "@tummycrypt/tinyland-auth-pg": "^0.2.1",
     "@skeletonlabs/skeleton": "^4.0.0",
     "@skeletonlabs/skeleton-svelte": "^4.0.0",
     "svelte": "^5.0.0"
   },
   "peerDependenciesMeta": {
+    "@tummycrypt/tinyland-auth-pg": {
+      "optional": true
+    },
     "@skeletonlabs/skeleton": {
       "optional": true
     },
@@ -100,7 +104,6 @@
     }
   },
   "dependencies": {
-    "@tummycrypt/tinyland-auth-pg": "^0.2.1",
     "drizzle-orm": "0.39.3",
     "effect": "^3.19.14",
     "zod": "^4.3.5"
@@ -112,6 +115,7 @@
     "@sveltejs/vite-plugin-svelte": "^6.0.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/svelte": "^5.3.1",
+    "@tummycrypt/tinyland-auth-pg": "^0.2.4",
     "@types/node": "^20.0.0",
     "@typescript-eslint/parser": "^8.58.2",
     "@vitest/coverage-v8": "^4.0.0",

@@ -16,7 +16,10 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Effect } from "effect";
-import { createHomegrownAdapter } from "../homegrown.js";
+import {
+  createHomegrownAdapter,
+  type HomegrownAdapterConfig,
+} from "../homegrown.js";
 
 // ---------------------------------------------------------------------------
 // Mock schemas — minimal shape matching what Drizzle ORM tables expose
@@ -51,20 +54,23 @@ const mockSlotReservationsTable = {
 };
 const mockClientsTable = { id: "id", email: "email" };
 
-// Mock dynamic imports for schema modules
-vi.mock("@tummycrypt/tinyland-auth-pg/content-schema", () => ({
-  services: mockServicesTable,
-  practitioners: mockPractitionersTable,
-  businessHours: mockBusinessHoursTable,
-}));
+const testSchemas = {
+  content: {
+    services: mockServicesTable,
+    practitioners: mockPractitionersTable,
+    businessHours: mockBusinessHoursTable,
+  },
+  booking: {
+    bookings: mockBookingsTable,
+    timeBlocks: mockTimeBlocksTable,
+    slotReservations: mockSlotReservationsTable,
+    clients: mockClientsTable,
+    businessHoursOverrides: mockBusinessHoursOverridesTable,
+  },
+};
 
-vi.mock("@tummycrypt/tinyland-auth-pg/booking-schema", () => ({
-  bookings: mockBookingsTable,
-  timeBlocks: mockTimeBlocksTable,
-  slotReservations: mockSlotReservationsTable,
-  clients: mockClientsTable,
-  businessHoursOverrides: mockBusinessHoursOverridesTable,
-}));
+const createAdapter = (config: HomegrownAdapterConfig) =>
+  createHomegrownAdapter({ schemas: testSchemas, ...config });
 
 // Mock drizzle-orm operators — return identity functions for where-clause building
 vi.mock("drizzle-orm", () => ({
@@ -260,19 +266,19 @@ const TEST_CLIENT: {
 describe("HomegrownAdapter", () => {
   describe("creation and configuration", () => {
     it('creates an adapter with name "homegrown"', () => {
-      const adapter = createHomegrownAdapter({ getDb: async () => ({}) });
+      const adapter = createAdapter({ getDb: async () => ({}) });
       expect(adapter.name).toBe("homegrown");
     });
 
     it("creates an adapter with a scoped database executor only", () => {
-      const adapter = createHomegrownAdapter({
+      const adapter = createAdapter({
         withDb: async (fn) => fn({}),
       });
       expect(adapter.name).toBe("homegrown");
     });
 
     it("throws immediately when no database accessor is configured", () => {
-      expect(() => createHomegrownAdapter({})).toThrow(
+      expect(() => createAdapter({})).toThrow(
         "HomegrownAdapter requires either getDb or withDb",
       );
     });
@@ -283,7 +289,7 @@ describe("HomegrownAdapter", () => {
       const getDb = vi.fn(async () => mockDb);
       const withDb = vi.fn(async (fn) => fn(mockDb));
 
-      const adapter = createHomegrownAdapter({ getDb, withDb });
+      const adapter = createAdapter({ getDb, withDb });
       const result = await Effect.runPromise(adapter.getServices());
 
       expect(result).toHaveLength(1);
@@ -292,7 +298,7 @@ describe("HomegrownAdapter", () => {
     });
 
     it("exposes all 16+1 SchedulingAdapter methods", () => {
-      const adapter = createHomegrownAdapter({ getDb: async () => ({}) });
+      const adapter = createAdapter({ getDb: async () => ({}) });
       const methods = [
         "getServices",
         "getService",
@@ -318,7 +324,7 @@ describe("HomegrownAdapter", () => {
     });
 
     it("accepts custom configuration", () => {
-      const adapter = createHomegrownAdapter({
+      const adapter = createAdapter({
         getDb: async () => ({}),
         timezone: "America/Chicago",
         slotInterval: 15,
@@ -340,7 +346,7 @@ describe("HomegrownAdapter", () => {
       // orderBy terminal returns the service rows
       mockDb._terminals.orderBy.mockResolvedValue([SERVICE_ROW]);
 
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
       const result = await Effect.runPromise(adapter.getServices());
 
       expect(result).toEqual([
@@ -361,7 +367,7 @@ describe("HomegrownAdapter", () => {
       const mockDb = createMockDb();
       mockDb._terminals.orderBy.mockResolvedValue([]);
 
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
       const result = await Effect.runPromise(adapter.getServices());
 
       expect(result).toEqual([]);
@@ -373,7 +379,7 @@ describe("HomegrownAdapter", () => {
         { ...SERVICE_ROW, description: null, category: null },
       ]);
 
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
       const result = await Effect.runPromise(adapter.getServices());
 
       expect(result[0].description).toBeUndefined();
@@ -392,7 +398,7 @@ describe("HomegrownAdapter", () => {
         }),
       });
 
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
       const result = await Effect.runPromiseExit(adapter.getServices());
 
       expect(result._tag).toBe("Failure");
@@ -402,7 +408,7 @@ describe("HomegrownAdapter", () => {
   describe("getService", () => {
     it("resolves service by UUID", async () => {
       const mockDb = createMockDb({ select: [SERVICE_ROW] });
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
 
       const result = await Effect.runPromise(
         adapter.getService("a1b2c3d4-e5f6-7890-abcd-ef1234567890"),
@@ -416,7 +422,7 @@ describe("HomegrownAdapter", () => {
 
     it("resolves service by acuityId (non-UUID string)", async () => {
       const mockDb = createMockDb({ select: [SERVICE_ROW] });
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
 
       const result = await Effect.runPromise(adapter.getService("12345"));
 
@@ -427,7 +433,7 @@ describe("HomegrownAdapter", () => {
       const mockDb = createMockDb({ select: [] });
       mockDb._terminals.limit.mockResolvedValue([]);
 
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
       const result = await Effect.runPromiseExit(
         adapter.getService("nonexistent"),
       );
@@ -443,7 +449,7 @@ describe("HomegrownAdapter", () => {
   describe("getProviders", () => {
     it("returns the default practitioner as a Provider", async () => {
       const mockDb = createMockDb({ select: [PRACTITIONER_ROW] });
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
 
       const result = await Effect.runPromise(adapter.getProviders());
 
@@ -462,7 +468,7 @@ describe("HomegrownAdapter", () => {
       const mockDb = createMockDb({ select: [] });
       mockDb._terminals.limit.mockResolvedValue([]);
 
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
       const result = await Effect.runPromise(adapter.getProviders());
 
       expect(result).toEqual([]);
@@ -470,7 +476,7 @@ describe("HomegrownAdapter", () => {
 
     it("uses custom timezone from config", async () => {
       const mockDb = createMockDb({ select: [PRACTITIONER_ROW] });
-      const adapter = createHomegrownAdapter({
+      const adapter = createAdapter({
         getDb: async () => mockDb,
         timezone: "America/Chicago",
       });
@@ -483,7 +489,7 @@ describe("HomegrownAdapter", () => {
   describe("getProvider", () => {
     it("returns a specific provider by ID", async () => {
       const mockDb = createMockDb({ select: [PRACTITIONER_ROW] });
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
 
       const result = await Effect.runPromise(
         adapter.getProvider("prac-uuid-1"),
@@ -497,7 +503,7 @@ describe("HomegrownAdapter", () => {
       const mockDb = createMockDb({ select: [] });
       mockDb._terminals.limit.mockResolvedValue([]);
 
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
       const result = await Effect.runPromiseExit(
         adapter.getProvider("nonexistent"),
       );
@@ -509,7 +515,7 @@ describe("HomegrownAdapter", () => {
   describe("getProvidersForService", () => {
     it("delegates to getProviders (solo practice)", async () => {
       const mockDb = createMockDb({ select: [PRACTITIONER_ROW] });
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
 
       const result = await Effect.runPromise(
         adapter.getProvidersForService("any-service"),
@@ -527,7 +533,7 @@ describe("HomegrownAdapter", () => {
   describe("createReservation", () => {
     it("inserts a reservation and returns SlotReservation", async () => {
       const mockDb = createMockDb({ insert: [RESERVATION_ROW] });
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
 
       const result = await Effect.runPromise(
         adapter.createReservation({
@@ -550,7 +556,7 @@ describe("HomegrownAdapter", () => {
 
     it("defaults expiration to 10 minutes when not specified", async () => {
       const mockDb = createMockDb({ insert: [RESERVATION_ROW] });
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
 
       // The adapter calculates expiresAt internally — we just verify the
       // insert goes through and returns the DB row
@@ -569,7 +575,7 @@ describe("HomegrownAdapter", () => {
   describe("releaseReservation", () => {
     it("sets releasedAt on the reservation", async () => {
       const mockDb = createMockDb();
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
 
       // releaseReservation returns void — just ensure no throw
       await expect(
@@ -587,7 +593,7 @@ describe("HomegrownAdapter", () => {
   describe("findOrCreateClient", () => {
     it("returns existing client with isNew=false and updates info", async () => {
       const mockDb = createMockDb({ select: [CLIENT_ROW] });
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
 
       const result = await Effect.runPromise(
         adapter.findOrCreateClient(TEST_CLIENT),
@@ -607,7 +613,7 @@ describe("HomegrownAdapter", () => {
         { id: "client-uuid-new" },
       ]);
 
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
 
       const result = await Effect.runPromise(
         adapter.findOrCreateClient(TEST_CLIENT),
@@ -621,7 +627,7 @@ describe("HomegrownAdapter", () => {
   describe("getClientByEmail", () => {
     it("returns ClientInfo when client exists", async () => {
       const mockDb = createMockDb({ select: [CLIENT_ROW] });
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
 
       const result = await Effect.runPromise(
         adapter.getClientByEmail("alice@example.com"),
@@ -640,7 +646,7 @@ describe("HomegrownAdapter", () => {
       const mockDb = createMockDb({ select: [] });
       mockDb._terminals.limit.mockResolvedValue([]);
 
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
 
       const result = await Effect.runPromise(
         adapter.getClientByEmail("nobody@example.com"),
@@ -653,7 +659,7 @@ describe("HomegrownAdapter", () => {
       const mockDb = createMockDb({
         select: [{ ...CLIENT_ROW, phone: null, notes: null }],
       });
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
 
       const result = await Effect.runPromise(
         adapter.getClientByEmail("alice@example.com"),
@@ -671,7 +677,7 @@ describe("HomegrownAdapter", () => {
   describe("cancelBooking", () => {
     it("sets status to cancelled", async () => {
       const mockDb = createMockDb();
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
 
       await expect(
         Effect.runPromise(
@@ -684,7 +690,7 @@ describe("HomegrownAdapter", () => {
 
     it("works without a reason", async () => {
       const mockDb = createMockDb();
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
 
       await expect(
         Effect.runPromise(adapter.cancelBooking("booking-uuid-1")),
@@ -714,7 +720,7 @@ describe("HomegrownAdapter", () => {
         ],
       );
 
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
       const result = await Effect.runPromise(
         adapter.createBooking({
           serviceId: "svc-uuid-1",
@@ -738,7 +744,7 @@ describe("HomegrownAdapter", () => {
         [], // resolveService returns empty
       ]);
 
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
       const exit = await Effect.runPromiseExit(
         adapter.createBooking({
           serviceId: "nonexistent",
@@ -764,7 +770,7 @@ describe("HomegrownAdapter", () => {
         ],
       );
 
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
       const result = await Effect.runPromise(
         adapter.createBooking({
           serviceId: "svc-uuid-1",
@@ -792,7 +798,7 @@ describe("HomegrownAdapter", () => {
         [PRACTITIONER_ROW], // practitioner
       ]);
 
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
       const result = await Effect.runPromise(
         adapter.getBooking("booking-uuid-1"),
       );
@@ -812,7 +818,7 @@ describe("HomegrownAdapter", () => {
         [], // booking not found
       ]);
 
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
       const exit = await Effect.runPromiseExit(
         adapter.getBooking("nonexistent"),
       );
@@ -827,7 +833,7 @@ describe("HomegrownAdapter", () => {
         [CLIENT_ROW], // client
       ]);
 
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
       const result = await Effect.runPromise(
         adapter.getBooking("booking-uuid-1"),
       );
@@ -859,7 +865,7 @@ describe("HomegrownAdapter", () => {
         [PRACTITIONER_ROW],
       ]);
 
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
       const result = await Effect.runPromise(
         adapter.rescheduleBooking("booking-uuid-1", "2026-04-21T10:00:00.000Z"),
       );
@@ -873,7 +879,7 @@ describe("HomegrownAdapter", () => {
         [], // existing booking not found
       ]);
 
-      const adapter = createHomegrownAdapter({ getDb: async () => mockDb });
+      const adapter = createAdapter({ getDb: async () => mockDb });
       const exit = await Effect.runPromiseExit(
         adapter.rescheduleBooking("nonexistent", "2026-04-21T10:00:00.000Z"),
       );
@@ -897,7 +903,7 @@ describe("HomegrownAdapter", () => {
       ]);
       const withDb = vi.fn(async (fn) => fn(mockDb));
 
-      const adapter = createHomegrownAdapter({ withDb });
+      const adapter = createAdapter({ withDb });
       const result = await Effect.runPromise(
         adapter.rescheduleBooking("booking-uuid-1", "2026-04-21T10:00:00.000Z"),
       );
@@ -913,7 +919,7 @@ describe("HomegrownAdapter", () => {
 
   describe("Effect error wrapping", () => {
     it("wraps DB connection errors as InfrastructureError", async () => {
-      const adapter = createHomegrownAdapter({
+      const adapter = createAdapter({
         getDb: async () => {
           throw new Error("ECONNREFUSED");
         },
@@ -924,7 +930,7 @@ describe("HomegrownAdapter", () => {
     });
 
     it("wraps non-Error throws as InfrastructureError with UNKNOWN code", async () => {
-      const adapter = createHomegrownAdapter({
+      const adapter = createAdapter({
         getDb: async () => {
           throw "string error";
         },
