@@ -57,11 +57,14 @@ Current operational truth:
 
 - local development should default to `jesssullivan/main`
 - that branch is the current functional release line
-- current published package truth is `@tummycrypt/scheduling-kit` `0.7.6`
+- current published package truth is `@tummycrypt/scheduling-kit` `0.7.7`
   on npm, GitHub Releases, GitHub Packages, and the active tinyland Bazel
   registry
-- `0.7.6` fixes downstream Bzlmod `//:pkg` consumption by making the Svelte
+- `0.7.7` fixes downstream Bzlmod `//:pkg` consumption by making the Svelte
   package build independent of main-workspace-relative `src` paths
+- the next release candidate should not reintroduce a mandatory
+  `tinyland-auth-pg` dependency for HomegrownAdapter; use explicit schema
+  injection and keep any auth-pg fallback optional
 - `#73` remains open only for explicit historical release-surface
   backfill/documentation around older `0.7.1` / `0.7.2` gaps; the current
   release/tag/npm/Bazel/registry authority path is healthy

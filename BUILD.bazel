@@ -149,7 +149,7 @@ npm_package(
     ],
     package = "@tummycrypt/scheduling-kit",
     tags = ["manual"],
-    version = "0.7.7",
+    version = "0.7.8",
     visibility = ["//visibility:public"],
 )
 
@@ -189,7 +189,6 @@ ts_project(
         ":node_modules",
         ":node_modules/effect",
         ":node_modules/drizzle-orm",
-        ":node_modules/@tummycrypt/tinyland-auth-pg",
     ],
     visibility = ["//visibility:public"],
 )
