@@ -308,8 +308,8 @@ describe("HomegrownAdapter", () => {
         "getAvailableDates",
         "getAvailableSlots",
         "checkSlotAvailability",
-        "createReservation",
-        "releaseReservation",
+        "softHoldSlot",
+        "releaseSoftHold",
         "createBooking",
         "createBookingWithPaymentRef",
         "getBooking",
@@ -530,13 +530,13 @@ describe("HomegrownAdapter", () => {
   // Reservations
   // -------------------------------------------------------------------------
 
-  describe("createReservation", () => {
-    it("inserts a reservation and returns SlotReservation", async () => {
+  describe("softHoldSlot", () => {
+    it("inserts an advisory soft hold and returns SlotSoftHold", async () => {
       const mockDb = createMockDb({ insert: [RESERVATION_ROW] });
       const adapter = createAdapter({ getDb: async () => mockDb });
 
       const result = await Effect.runPromise(
-        adapter.createReservation({
+        adapter.softHoldSlot({
           serviceId: "svc-uuid-1",
           providerId: "prac-uuid-1",
           datetime: "2026-04-20T14:00:00.000Z",
@@ -561,7 +561,7 @@ describe("HomegrownAdapter", () => {
       // The adapter calculates expiresAt internally — we just verify the
       // insert goes through and returns the DB row
       const result = await Effect.runPromise(
-        adapter.createReservation({
+        adapter.softHoldSlot({
           serviceId: "svc-uuid-1",
           datetime: "2026-04-20T14:00:00.000Z",
           duration: 60,
@@ -572,14 +572,14 @@ describe("HomegrownAdapter", () => {
     });
   });
 
-  describe("releaseReservation", () => {
-    it("sets releasedAt on the reservation", async () => {
+  describe("releaseSoftHold", () => {
+    it("sets releasedAt on the soft hold", async () => {
       const mockDb = createMockDb();
       const adapter = createAdapter({ getDb: async () => mockDb });
 
-      // releaseReservation returns void — just ensure no throw
+      // releaseSoftHold returns void — just ensure no throw
       await expect(
-        Effect.runPromise(adapter.releaseReservation("res-uuid-1")),
+        Effect.runPromise(adapter.releaseSoftHold("res-uuid-1")),
       ).resolves.toBeUndefined();
 
       expect(mockDb.update).toHaveBeenCalled();

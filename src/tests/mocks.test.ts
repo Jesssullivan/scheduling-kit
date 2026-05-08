@@ -120,7 +120,7 @@ describe('Acuity mock handlers', () => {
   });
 
   describe('POST /blocks', () => {
-    it('creates a block (reservation)', async () => {
+    it('creates a block (soft hold)', async () => {
       const response = await fetch(`${BASE_URL}/blocks`, {
         method: 'POST',
         headers: { ...authHeader, 'Content-Type': 'application/json' },

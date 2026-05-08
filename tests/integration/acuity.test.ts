@@ -105,13 +105,13 @@ describe('Acuity Integration: Full Booking Lifecycle', () => {
     await expectSuccess(adapter.cancelBooking(booking.id, 'Integration test cleanup'));
   });
 
-  it('creates reservation (block) for slot protection', async () => {
+  it('creates soft hold (block) for slot protection', async () => {
     const services = await expectSuccess(adapter.getServices());
     const providers = await expectSuccess(adapter.getProviders());
 
-    // Create a reservation
-    const reservation = await expectSuccess(
-      adapter.createReservation({
+    // Create a soft hold
+    const softHold = await expectSuccess(
+      adapter.softHoldSlot({
         serviceId: services[0].id,
         providerId: providers[0].id,
         datetime: '2026-02-20T19:00:00.000Z',
@@ -119,16 +119,16 @@ describe('Acuity Integration: Full Booking Lifecycle', () => {
       })
     );
 
-    expect(reservation.id).toBeDefined();
-    expect(reservation.duration).toBe(60);
-    expect(reservation.expiresAt).toBeDefined();
+    expect(softHold.id).toBeDefined();
+    expect(softHold.duration).toBe(60);
+    expect(softHold.expiresAt).toBeDefined();
 
-    // Verify reservation is in mock state
+    // Verify soft hold is in mock state
     const mockState = getAcuityMockState();
     expect(mockState.blocks.size).toBe(1);
 
-    // Release the reservation
-    await expectSuccess(adapter.releaseReservation(reservation.id));
+    // Release the soft hold
+    await expectSuccess(adapter.releaseSoftHold(softHold.id));
 
     // Verify it's removed
     const stateAfter = getAcuityMockState();

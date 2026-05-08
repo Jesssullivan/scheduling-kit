@@ -12,7 +12,7 @@ import type {
   AvailableDate,
   Booking,
   BookingRequest,
-  SlotReservation,
+  SlotSoftHold,
   ClientInfo,
 } from '../core/types.js';
 import { Errors } from '../core/types.js';
@@ -297,10 +297,10 @@ export const createAcuityAdapter = (config: AcuityAdapterConfig): SchedulingAdap
       );
     },
 
-    // Reservations (via Acuity blocks)
-    createReservation: ({ providerId, datetime, duration, notes }) => {
+    // Advisory soft holds (via Acuity blocks)
+    softHoldSlot: ({ providerId, datetime, duration, notes }) => {
       if (!providerId) {
-        return Effect.fail(Errors.reservation('BLOCK_FAILED', 'Provider ID required for reservation'));
+        return Effect.fail(Errors.reservation('BLOCK_FAILED', 'Provider ID required for soft hold'));
       }
 
       const startTime = new Date(datetime);
@@ -312,7 +312,7 @@ export const createAcuityAdapter = (config: AcuityAdapterConfig): SchedulingAdap
             calendarID: parseInt(providerId, 10),
             start: startTime.toISOString(),
             end: endTime.toISOString(),
-            notes: notes ?? 'Payment pending - slot reserved',
+            notes: notes ?? 'Payment pending - advisory soft hold',
           }),
           (block) => ({
             id: String(block.id),
@@ -320,17 +320,17 @@ export const createAcuityAdapter = (config: AcuityAdapterConfig): SchedulingAdap
             duration,
             expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
             providerId,
-          } satisfies SlotReservation)
+          } satisfies SlotSoftHold)
         ),
         Effect.mapError((e) =>
-          Errors.reservation('BLOCK_FAILED', e._tag === 'AcuityError' ? e.message : 'Failed to create reservation')
+          Errors.reservation('BLOCK_FAILED', e._tag === 'AcuityError' ? e.message : 'Failed to create soft hold')
         )
       );
     },
 
-    releaseReservation: (reservationId) =>
+    releaseSoftHold: (softHoldId) =>
       pipe(
-        Effect.map(del<void>(`/blocks/${reservationId}`), () => undefined),
+        Effect.map(del<void>(`/blocks/${softHoldId}`), () => undefined),
         Effect.catchAll(() => Effect.succeed(undefined)) // Ignore errors when releasing
       ),
 

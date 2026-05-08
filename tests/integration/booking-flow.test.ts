@@ -201,7 +201,7 @@ describe('Complete Booking Flow: Error Recovery', () => {
     // First call (checkSlotAvailability) succeeds, but booking creation fails
     configureAcuityMock({ failOnBookingCreate: true });
 
-    // This should fail but cleanup (release reservation) should still happen
+    // This should fail but cleanup (release soft hold) should still happen
     const exit = await Effect.runPromiseExit(
       kit.completeBooking(
         createBookingRequest({ idempotencyKey: 'api-failure-key' }),

@@ -217,7 +217,7 @@ const createBlock = http.post(`${BASE_URL}/blocks`, async ({ request }) => {
       calendarID: body.calendarID,
       start: body.start,
       end: body.end,
-      notes: body.notes || 'Payment pending - slot reserved',
+      notes: body.notes || 'Payment pending - advisory soft hold',
     };
 
     state.blocks.set(blockId, block);

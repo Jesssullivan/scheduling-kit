@@ -14,7 +14,7 @@ import type {
 	TimeSlot,
 	Booking,
 	BookingRequest,
-	SlotReservation,
+	SlotSoftHold,
 	ClientInfo,
 } from '../core/types.js';
 import type { SchedulingResult } from '../core/types.js';
@@ -82,16 +82,16 @@ export const createCalComAdapter = (_config: CalComConfig): SchedulingAdapter =>
 			datetime: string;
 		}) => notImplemented<boolean>(),
 
-		createReservation: (_params: {
+		softHoldSlot: (_params: {
 			serviceId: string;
 			providerId?: string;
 			datetime: string;
 			duration: number;
 			expirationMinutes?: number;
 			notes?: string;
-		}) => notImplemented<SlotReservation>(),
+		}) => notImplemented<SlotSoftHold>(),
 
-		releaseReservation: (_reservationId: string) => notImplemented<void>(),
+		releaseSoftHold: (_softHoldId: string) => notImplemented<void>(),
 
 		createBooking: (_request: BookingRequest) => notImplemented<Booking>(),
 

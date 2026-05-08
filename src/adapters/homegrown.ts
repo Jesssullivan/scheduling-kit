@@ -18,7 +18,7 @@ import type {
   AvailableDate,
   Booking,
   BookingRequest,
-  SlotReservation,
+  SlotSoftHold,
   ClientInfo,
   SchedulingResult,
   BookingStatus,
@@ -295,8 +295,8 @@ export const createHomegrownAdapter = (
           ),
         );
 
-      // Active reservations (not expired, not released)
-      const reservationRows = await d
+      // Active soft holds (not expired, not released)
+      const softHoldRows = await d
         .select({
           datetime: slotReservations.datetime,
           duration: slotReservations.duration,
@@ -325,7 +325,7 @@ export const createHomegrownAdapter = (
           end: new Date(r.endTime),
         });
       }
-      for (const r of reservationRows) {
+      for (const r of softHoldRows) {
         const start = new Date(r.datetime);
         occupied.push({
           start,
@@ -606,9 +606,9 @@ export const createHomegrownAdapter = (
         });
       }),
 
-    // --- Reservations ---
+    // --- Advisory soft holds ---
 
-    createReservation: (params) =>
+    softHoldSlot: (params) =>
       fromAsync(async () => {
         const { slotReservations } = (await loadSchemas()).booking;
         const expirationMinutes = params.expirationMinutes ?? 10;
@@ -633,10 +633,10 @@ export const createHomegrownAdapter = (
           duration: row.duration,
           expiresAt: row.expiresAt,
           providerId: params.providerId,
-        } satisfies SlotReservation;
+        } satisfies SlotSoftHold;
       }),
 
-    releaseReservation: (reservationId: string) =>
+    releaseSoftHold: (softHoldId: string) =>
       fromAsync(async () => {
         const { slotReservations } = (await loadSchemas()).booking;
         const { eq } = await import("drizzle-orm");
@@ -644,7 +644,7 @@ export const createHomegrownAdapter = (
           d
             .update(slotReservations)
             .set({ releasedAt: new Date().toISOString() })
-            .where(eq(slotReservations.id, reservationId)),
+            .where(eq(slotReservations.id, softHoldId)),
         );
       }),
 

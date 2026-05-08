@@ -84,10 +84,10 @@ const createMockWizardAdapter = (overrides?: Partial<SchedulingAdapter>): Schedu
   checkSlotAvailability: vi.fn(() => Effect.succeed(true)),
 
   // Reservation: BLOCK_FAILED (wizard adapter doesn't support reservations)
-  createReservation: vi.fn(() =>
-    Effect.fail(Errors.reservation('BLOCK_FAILED', 'Reservations not supported by wizard adapter'))
+  softHoldSlot: vi.fn(() =>
+    Effect.fail(Errors.reservation('BLOCK_FAILED', 'Soft holds not supported by wizard adapter'))
   ),
-  releaseReservation: vi.fn(() => Effect.succeed(undefined)),
+  releaseSoftHold: vi.fn(() => Effect.succeed(undefined)),
 
   // Write ops (Effect middleware delegation)
   createBooking: vi.fn((request) =>
@@ -307,14 +307,14 @@ describe('Wizard Adapter + Pipeline Integration', () => {
       expect(venmoAdapter.capturePayment).toHaveBeenCalled();
     });
 
-    it('skips reservation gracefully (wizard adapter returns BLOCK_FAILED)', async () => {
+    it('skips softHold gracefully (wizard adapter returns BLOCK_FAILED)', async () => {
       const request = createBookingRequest();
 
       const result = await expectSuccess(kit.completeBooking(request, 'cash'));
 
-      // Pipeline should have tried reservation and continued without one
-      expect(wizardAdapter.createReservation).toHaveBeenCalled();
-      expect(result.reservation).toBeUndefined();
+      // Pipeline should have tried softHold and continued without one
+      expect(wizardAdapter.softHoldSlot).toHaveBeenCalled();
+      expect(result.softHold).toBeUndefined();
       expect(result.booking).toBeDefined();
     });
 

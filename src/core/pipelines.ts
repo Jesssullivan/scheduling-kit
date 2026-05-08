@@ -8,7 +8,7 @@ import type {
   SchedulingResult,
   BookingRequest,
   Booking,
-  SlotReservation,
+  SlotSoftHold,
   PaymentResult,
   Service,
   TimeSlot,
@@ -60,7 +60,7 @@ export interface BookingPipelineInput {
 export interface BookingPipelineResult {
   readonly booking: Booking;
   readonly payment: PaymentResult;
-  readonly reservation?: SlotReservation;
+  readonly softHold?: SlotSoftHold;
 }
 
 // =============================================================================
@@ -73,14 +73,18 @@ export interface BookingPipelineResult {
  * Flow:
  * 1. Validate request
  * 2. Check slot availability
- * 3. Create slot reservation (block)
+ * 3. Create advisory soft hold when supported
  * 4. Process payment
  * 5. Create booking with payment reference
- * 6. Release reservation
+ * 6. Release soft hold
  * 7. Return result
  *
- * On payment failure: Release reservation, return error
- * On booking failure: Refund payment, release reservation, return error
+ * On payment failure: release soft hold, return error.
+ * On booking failure: refund payment, release soft hold, return error.
+ *
+ * The soft hold is an advisory checkout guard, not a correctness boundary.
+ * Backends must still rely on their final booking write/rejection semantics,
+ * and database-backed adapters should pair this with slot-scoped locks.
  */
 export const completeBookingWithAltPayment = (
   ctx: PipelineContext,
@@ -109,20 +113,20 @@ export const completeBookingWithAltPayment = (
       );
     }
 
-    // Phase B: Reserve slot (optional — graceful fallback if adapter doesn't support)
-    const reservation = yield* pipe(
-      scheduler.createReservation({
+    // Phase B: Advisory hold (optional; graceful fallback when unsupported)
+    const softHold = yield* pipe(
+      scheduler.softHoldSlot({
         serviceId: request.serviceId,
         providerId: request.providerId,
         datetime: request.datetime,
         duration: service.duration,
         notes: `Payment pending: ${request.idempotencyKey}`,
       }),
-      Effect.map((r) => r as SlotReservation | undefined),
-      Effect.catchAll(() => Effect.succeed(undefined as SlotReservation | undefined)),
+      Effect.map((r) => r as SlotSoftHold | undefined),
+      Effect.catchAll(() => Effect.succeed(undefined as SlotSoftHold | undefined)),
     );
 
-    // Phase C: Process payment (release reservation on failure)
+    // Phase C: Process payment (release soft hold on failure)
     const payment = yield* pipe(
       Effect.flatMap(
         paymentAdapter.createIntent({
@@ -135,9 +139,9 @@ export const completeBookingWithAltPayment = (
         (intent) => paymentAdapter.capturePayment(intent.id),
       ),
       Effect.catchAll((error) => {
-        if (reservation) {
+        if (softHold) {
           return Effect.flatMap(
-            scheduler.releaseReservation(reservation.id),
+            scheduler.releaseSoftHold(softHold.id),
             () => Effect.fail(error),
           );
         }
@@ -145,7 +149,7 @@ export const completeBookingWithAltPayment = (
       }),
     );
 
-    // Phase D: Create booking (refund + release on failure)
+    // Phase D: Create booking (refund + release soft hold on failure)
     const booking = yield* pipe(
       scheduler.createBookingWithPaymentRef(request, payment.transactionId, paymentAdapter.name),
       Effect.catchAll((error) =>
@@ -154,9 +158,9 @@ export const completeBookingWithAltPayment = (
             paymentAdapter.refund({ transactionId: payment.transactionId, reason: 'Booking creation failed' }),
             () => Effect.succeed(undefined),
           );
-          if (reservation) {
+          if (softHold) {
             yield* Effect.catchAll(
-              scheduler.releaseReservation(reservation.id),
+              scheduler.releaseSoftHold(softHold.id),
               () => Effect.succeed(undefined),
             );
           }
@@ -165,15 +169,15 @@ export const completeBookingWithAltPayment = (
       ),
     );
 
-    // Phase E: Cleanup — release reservation
-    if (reservation) {
+    // Phase E: Cleanup - release soft hold
+    if (softHold) {
       yield* Effect.catchAll(
-        scheduler.releaseReservation(reservation.id),
+        scheduler.releaseSoftHold(softHold.id),
         () => Effect.succeed(undefined),
       );
     }
 
-    return { booking, payment, reservation } satisfies BookingPipelineResult;
+    return { booking, payment, softHold } satisfies BookingPipelineResult;
   });
 
   return pipe(pipeline, withCorrelationId('completeBookingWithAltPayment', correlationId));

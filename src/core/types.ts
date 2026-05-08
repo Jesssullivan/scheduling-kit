@@ -238,13 +238,20 @@ export interface Booking {
 export type BookingStatus = 'confirmed' | 'pending' | 'cancelled' | 'completed' | 'no-show';
 export type PaymentStatus = 'pending' | 'paid' | 'refunded' | 'failed';
 
-export interface SlotReservation {
+export interface SlotSoftHold {
   readonly id: string;
   readonly datetime: string;
   readonly duration: number;
   readonly expiresAt: string;
   readonly providerId?: string;
 }
+
+/**
+ * @deprecated Use `SlotSoftHold`. Soft holds are advisory checkout guards, not
+ * cross-backend reservation guarantees. Final booking creation remains the
+ * authoritative conflict point.
+ */
+export type SlotReservation = SlotSoftHold;
 
 // =============================================================================
 // PAYMENT TYPES
