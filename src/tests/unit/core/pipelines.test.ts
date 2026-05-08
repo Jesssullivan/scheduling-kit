@@ -22,7 +22,7 @@ import {
   createProvider,
   createBooking,
   createBookingRequest,
-  createReservation,
+  softHoldSlot,
   createPaymentIntent,
   createPaymentResult,
   createTimeSlot,
@@ -61,8 +61,8 @@ const createMockScheduler = (): SchedulingAdapter => ({
   checkSlotAvailability: vi.fn(() => Effect.succeed(true)),
 
   // Reservations
-  createReservation: vi.fn(() => Effect.succeed(createReservation())),
-  releaseReservation: vi.fn(() => Effect.succeed(undefined)),
+  softHoldSlot: vi.fn(() => Effect.succeed(softHoldSlot())),
+  releaseSoftHold: vi.fn(() => Effect.succeed(undefined)),
 
   // Bookings
   createBooking: vi.fn(() => Effect.succeed(createBooking())),
@@ -150,11 +150,11 @@ describe('completeBookingWithAltPayment', () => {
     // Verify all steps were called
     expect(scheduler.getService).toHaveBeenCalledWith(input.request.serviceId);
     expect(scheduler.checkSlotAvailability).toHaveBeenCalled();
-    expect(scheduler.createReservation).toHaveBeenCalled();
+    expect(scheduler.softHoldSlot).toHaveBeenCalled();
     expect(paymentAdapter.createIntent).toHaveBeenCalled();
     expect(paymentAdapter.capturePayment).toHaveBeenCalled();
     expect(scheduler.createBookingWithPaymentRef).toHaveBeenCalled();
-    expect(scheduler.releaseReservation).toHaveBeenCalled();
+    expect(scheduler.releaseSoftHold).toHaveBeenCalled();
   });
 
   it('returns error for unknown payment method', async () => {
@@ -185,7 +185,7 @@ describe('completeBookingWithAltPayment', () => {
     expect(error._tag).toBe('ValidationError');
   });
 
-  it('returns reservation error when slot is taken', async () => {
+  it('returns soft hold error when slot is taken', async () => {
     vi.mocked(scheduler.checkSlotAvailability).mockReturnValue(Effect.succeed(false));
 
     const error = await expectFailureTag(
@@ -199,25 +199,25 @@ describe('completeBookingWithAltPayment', () => {
     }
   });
 
-  it('releases reservation on payment intent failure', async () => {
+  it('releases soft hold on payment intent failure', async () => {
     vi.mocked(paymentAdapter.createIntent).mockReturnValue(
       Effect.fail(Errors.payment('INTENT_FAILED', 'Failed to create intent', 'cash'))
     );
 
     await expectFailure(completeBookingWithAltPayment(ctx, input));
 
-    // Reservation should have been released
-    expect(scheduler.releaseReservation).toHaveBeenCalled();
+    // Soft hold should have been released
+    expect(scheduler.releaseSoftHold).toHaveBeenCalled();
   });
 
-  it('releases reservation on payment capture failure', async () => {
+  it('releases soft hold on payment capture failure', async () => {
     vi.mocked(paymentAdapter.capturePayment).mockReturnValue(
       Effect.fail(Errors.payment('CAPTURE_FAILED', 'Failed to capture payment', 'cash'))
     );
 
     await expectFailure(completeBookingWithAltPayment(ctx, input));
 
-    expect(scheduler.releaseReservation).toHaveBeenCalled();
+    expect(scheduler.releaseSoftHold).toHaveBeenCalled();
   });
 
   it('refunds payment on booking creation failure', async () => {
@@ -229,18 +229,18 @@ describe('completeBookingWithAltPayment', () => {
 
     // Payment should have been refunded
     expect(paymentAdapter.refund).toHaveBeenCalled();
-    expect(scheduler.releaseReservation).toHaveBeenCalled();
+    expect(scheduler.releaseSoftHold).toHaveBeenCalled();
   });
 
-  it('continues without reservation if reservation fails', async () => {
-    vi.mocked(scheduler.createReservation).mockReturnValue(
+  it('continues without softHold if softHold fails', async () => {
+    vi.mocked(scheduler.softHoldSlot).mockReturnValue(
       Effect.fail(Errors.reservation('BLOCK_FAILED', 'Could not create block'))
     );
 
     const result = await expectSuccess(completeBookingWithAltPayment(ctx, input));
 
     expect(result.booking).toBeDefined();
-    expect(result.reservation).toBeUndefined();
+    expect(result.softHold).toBeUndefined();
   });
 });
 

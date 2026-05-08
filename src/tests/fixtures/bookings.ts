@@ -7,7 +7,7 @@ import type {
   Booking,
   BookingRequest,
   ClientInfo,
-  SlotReservation,
+  SlotSoftHold,
   TimeSlot,
   AvailableDate,
 } from '../../core/types.js';
@@ -231,9 +231,9 @@ export const allBookings: Booking[] = [
 // =============================================================================
 
 /**
- * Active reservation (not expired)
+ * Active soft hold (not expired)
  */
-export const activeReservation: SlotReservation = {
+export const activeSoftHold: SlotSoftHold = {
   id: '999001',
   datetime: '2026-02-15T14:00:00-05:00',
   duration: 60,
@@ -242,9 +242,9 @@ export const activeReservation: SlotReservation = {
 };
 
 /**
- * Reservation about to expire (< 1 min)
+ * Soft hold about to expire (< 1 min)
  */
-export const expiringReservation: SlotReservation = {
+export const expiringSoftHold: SlotSoftHold = {
   id: '999002',
   datetime: '2026-02-15T15:00:00-05:00',
   duration: 30,
@@ -253,9 +253,9 @@ export const expiringReservation: SlotReservation = {
 };
 
 /**
- * Expired reservation
+ * Expired soft hold
  */
-export const expiredReservation: SlotReservation = {
+export const expiredSoftHold: SlotSoftHold = {
   id: '999003',
   datetime: '2026-02-15T16:00:00-05:00',
   duration: 60,
@@ -377,13 +377,13 @@ export const acuityAppointmentRaw = {
 };
 
 /**
- * Raw Acuity block (reservation) response
+ * Raw Acuity block (soft hold) response
  */
 export const acuityBlockRaw = {
   id: 999001,
   start: '2026-02-15T14:00:00-05:00',
   end: '2026-02-15T15:00:00-05:00',
-  notes: 'Payment pending - slot reserved',
+  notes: 'Payment pending - advisory soft hold',
   calendarID: 67890,
 };
 

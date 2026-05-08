@@ -14,7 +14,7 @@ import type {
   Booking,
   BookingStatus,
   PaymentStatus,
-  SlotReservation,
+  SlotSoftHold,
   PaymentIntent,
   PaymentResult,
   RefundResult,
@@ -232,9 +232,9 @@ export const bookingArb: fc.Arbitrary<Booking> = fc
   }));
 
 /**
- * SlotReservation arbitrary
+ * SlotSoftHold arbitrary
  */
-export const slotReservationArb: fc.Arbitrary<SlotReservation> = fc.record({
+export const slotSoftHoldArb: fc.Arbitrary<SlotSoftHold> = fc.record({
   id: idArb,
   datetime: datetimeArb,
   duration: durationArb,
@@ -377,9 +377,9 @@ export const createBooking = (overrides?: Partial<Booking>): Booking => ({
 });
 
 /**
- * Create a valid SlotReservation with optional overrides
+ * Create a valid SlotSoftHold with optional overrides
  */
-export const createReservation = (overrides?: Partial<SlotReservation>): SlotReservation => ({
+export const softHoldSlot = (overrides?: Partial<SlotSoftHold>): SlotSoftHold => ({
   id: '99999',
   datetime: '2026-02-15T19:00:00.000Z',
   duration: 60,

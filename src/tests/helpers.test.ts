@@ -30,7 +30,7 @@ import {
   createClient,
   createBooking,
   createBookingRequest,
-  createReservation,
+  softHoldSlot,
   createTimeSlot,
   createDaySlots,
   createMonthDates,
@@ -198,13 +198,13 @@ describe('factory functions', () => {
     });
   });
 
-  describe('createReservation', () => {
-    it('creates valid reservation', () => {
-      const reservation = createReservation();
-      expect(reservation.id).toBeDefined();
-      expect(reservation.datetime).toBeDefined();
-      expect(reservation.duration).toBeGreaterThan(0);
-      expect(new Date(reservation.expiresAt).getTime()).toBeGreaterThan(Date.now());
+  describe('softHoldSlot', () => {
+    it('creates valid soft hold', () => {
+      const softHold = softHoldSlot();
+      expect(softHold.id).toBeDefined();
+      expect(softHold.datetime).toBeDefined();
+      expect(softHold.duration).toBeGreaterThan(0);
+      expect(new Date(softHold.expiresAt).getTime()).toBeGreaterThan(Date.now());
     });
   });
 

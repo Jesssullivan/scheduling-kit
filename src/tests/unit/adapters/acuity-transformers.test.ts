@@ -230,10 +230,10 @@ describe('Acuity Adapter Transformers', () => {
     });
   });
 
-  describe('reservation transformer (blocks)', () => {
-    it('transforms block to SlotReservation', async () => {
-      const reservation = await expectSuccess(
-        adapter.createReservation({
+  describe('softHold transformer (blocks)', () => {
+    it('transforms block to SlotSoftHold', async () => {
+      const softHold = await expectSuccess(
+        adapter.softHoldSlot({
           serviceId: '12345',
           providerId: '67890',
           datetime: '2026-02-15T19:00:00.000Z',
@@ -241,18 +241,18 @@ describe('Acuity Adapter Transformers', () => {
         })
       );
 
-      expect(reservation.id).toBeDefined();
-      expect(typeof reservation.id).toBe('string');
-      expect(reservation.datetime).toBe('2026-02-15T19:00:00.000Z');
-      expect(reservation.duration).toBe(60);
-      expect(reservation.expiresAt).toBeDefined();
+      expect(softHold.id).toBeDefined();
+      expect(typeof softHold.id).toBe('string');
+      expect(softHold.datetime).toBe('2026-02-15T19:00:00.000Z');
+      expect(softHold.duration).toBe(60);
+      expect(softHold.expiresAt).toBeDefined();
       // Expires in the future
-      expect(new Date(reservation.expiresAt).getTime()).toBeGreaterThan(Date.now());
+      expect(new Date(softHold.expiresAt).getTime()).toBeGreaterThan(Date.now());
     });
 
-    it('requires provider ID for reservation', async () => {
+    it('requires provider ID for soft hold', async () => {
       const error = await expectFailureTag(
-        adapter.createReservation({
+        adapter.softHoldSlot({
           serviceId: '12345',
           datetime: '2026-02-15T19:00:00.000Z',
           duration: 60,

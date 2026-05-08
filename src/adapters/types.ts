@@ -11,7 +11,7 @@ import type {
   AvailableDate,
   Booking,
   BookingRequest,
-  SlotReservation,
+  SlotSoftHold,
   ClientInfo,
 } from '../core/types.js';
 
@@ -92,26 +92,30 @@ export interface SchedulingAdapter {
   }): SchedulingResult<boolean>;
 
   // ---------------------------------------------------------------------------
-  // Slot Reservation (Hold)
+  // Slot Soft Hold (Advisory)
   // ---------------------------------------------------------------------------
 
   /**
-   * Create a temporary hold on a time slot while payment is processing.
-   * This prevents double-booking during the checkout flow.
+   * Create an advisory temporary hold on a time slot while payment is
+   * processing. This is not a cross-backend reservation guarantee.
+   *
+   * Correctness still belongs to the backing scheduler's final booking
+   * conflict/rejection semantics, and backends should pair this with their own
+   * slot-scoped locking when they can.
    */
-  createReservation(params: {
+  softHoldSlot(params: {
     serviceId: string;
     providerId?: string;
     datetime: string;
     duration: number;
     expirationMinutes?: number;
     notes?: string;
-  }): SchedulingResult<SlotReservation>;
+  }): SchedulingResult<SlotSoftHold>;
 
   /**
-   * Release a slot reservation (after successful booking or timeout)
+   * Release a soft hold after successful booking, timeout, or abandonment.
    */
-  releaseReservation(reservationId: string): SchedulingResult<void>;
+  releaseSoftHold(softHoldId: string): SchedulingResult<void>;
 
   // ---------------------------------------------------------------------------
   // Bookings
