@@ -23,13 +23,13 @@ concurrency:
 
 jobs:
   package:
-    uses: tinyland-inc/ci-templates/.github/workflows/js-bazel-package.yml@21e0093a7586931ee69d716387e00556c6da7738
+    uses: tinyland-inc/ci-templates/.github/workflows/js-bazel-package.yml@61cd1338ca9dae8a25985c0a36ff7beb111449be
     with:
-      runner_mode: shared
-      shared_runner_labels_json: ${{ vars.PRIMARY_LINUX_RUNNER_LABELS_JSON }}
+      runner_mode: repo_owned
       runner_labels_json: ${{ vars.PRIMARY_LINUX_RUNNER_LABELS_JSON }}
       workspace_mode: isolated
-      publish_mode: same_runner
+      publish_mode: hosted_exception
+      npm_publish_mode: disabled
       node_versions: '["20", "22"]'
       publish_node_version: "22"
       pnpm_version: "9.15.9"
@@ -44,8 +44,5 @@ jobs:
       bazel_targets: "//:typecheck //:pkg //:test"
       package_dir: ./bazel-bin/pkg
       npm_access: public
-      npm_publish_provenance: true
       github_package_name: "@jesssullivan/scheduling-kit"
       dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
-    secrets:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

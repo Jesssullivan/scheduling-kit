@@ -91,12 +91,26 @@ const checks = [
 	{
 		label: 'CI runner mode',
 		actual: scalar(extract(ciWorkflow, /runner_mode:\s*([^\n]+)/, 'CI runner_mode')),
-		expected: 'shared',
+		expected: 'repo_owned',
+	},
+	{
+		label: 'CI runner labels',
+		actual: scalar(
+			extract(ciWorkflow, /runner_labels_json:\s*([^\n]+)/, 'CI runner_labels_json'),
+		),
+		expected: '${{ vars.PRIMARY_LINUX_RUNNER_LABELS_JSON }}',
 	},
 	{
 		label: 'CI publish mode',
 		actual: scalar(extract(ciWorkflow, /publish_mode:\s*([^\n]+)/, 'CI publish_mode')),
-		expected: 'same_runner',
+		expected: 'hosted_exception',
+	},
+	{
+		label: 'CI npm publish mode',
+		actual: scalar(
+			extract(ciWorkflow, /npm_publish_mode:\s*([^\n]+)/, 'CI npm_publish_mode'),
+		),
+		expected: 'disabled',
 	},
 	{
 		label: 'CI package artifact path',
@@ -104,10 +118,8 @@ const checks = [
 		expected: './bazel-bin/pkg',
 	},
 	{
-		label: 'CI npm provenance intent',
-		actual: scalar(
-			extract(ciWorkflow, /npm_publish_provenance:\s*([^\n]+)/, 'CI npm provenance'),
-		),
+		label: 'CI omits npm provenance',
+		actual: String(!/npm_publish_provenance:/.test(ciWorkflow)),
 		expected: 'true',
 	},
 	{
@@ -147,19 +159,54 @@ const checks = [
 		expected: 'write',
 	},
 	{
+		label: 'publish runner mode',
+		actual: scalar(
+			extract(publishWorkflow, /runner_mode:\s*([^\n]+)/, 'publish runner_mode'),
+		),
+		expected: 'repo_owned',
+	},
+	{
+		label: 'publish runner labels',
+		actual: scalar(
+			extract(
+				publishWorkflow,
+				/runner_labels_json:\s*([^\n]+)/,
+				'publish runner_labels_json',
+			),
+		),
+		expected: '${{ vars.PRIMARY_LINUX_RUNNER_LABELS_JSON }}',
+	},
+	{
+		label: 'publish mode',
+		actual: scalar(
+			extract(publishWorkflow, /publish_mode:\s*([^\n]+)/, 'publish publish_mode'),
+		),
+		expected: 'hosted_exception',
+	},
+	{
+		label: 'publish npm publish mode',
+		actual: scalar(
+			extract(
+				publishWorkflow,
+				/npm_publish_mode:\s*([^\n]+)/,
+				'publish npm_publish_mode',
+			),
+		),
+		expected: 'disabled',
+	},
+	{
 		label: 'publish package artifact path',
 		actual: scalar(extract(publishWorkflow, /package_dir:\s*([^\n]+)/, 'publish package_dir')),
 		expected: './bazel-bin/pkg',
 	},
 	{
-		label: 'publish npm provenance',
-		actual: scalar(
-			extract(
-				publishWorkflow,
-				/npm_publish_provenance:\s*([^\n]+)/,
-				'publish npm provenance',
-			),
-		),
+		label: 'publish omits npm provenance',
+		actual: String(!/npm_publish_provenance:/.test(publishWorkflow)),
+		expected: 'true',
+	},
+	{
+		label: 'publish omits npm token',
+		actual: String(!/NPM_TOKEN/.test(publishWorkflow)),
 		expected: 'true',
 	},
 	{

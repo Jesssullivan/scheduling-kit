@@ -25,7 +25,10 @@ Generated from `package.json`, `MODULE.bazel`, `BUILD.bazel`,
 | --- | --- |
 | npm package | `@tummycrypt/scheduling-kit` |
 | npm access | `public` |
+| npmjs publish mode | `disabled` |
 | GitHub Packages name | `@jesssullivan/scheduling-kit` |
+| CI runner mode | `repo_owned` |
+| Publish mode | `hosted_exception` |
 | CI node versions | `["20", "22"]` |
 | Publish node version | `22` |
 | Bazel targets | `//:typecheck //:pkg //:test` |

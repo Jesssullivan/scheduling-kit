@@ -28,6 +28,9 @@ const modulePnpmVersion = extract(moduleBazel, /pnpm_version = "([^"]+)"/, 'MODU
 const ciNodeVersions = extract(ciWorkflow, /node_versions:\s*'([^']+)'/, 'CI node versions');
 const ciBazelTargets = extract(ciWorkflow, /bazel_targets:\s*"([^"]+)"/, 'CI bazel targets');
 const ciPackageDir = extract(ciWorkflow, /package_dir:\s*([^\n]+)/, 'CI package dir');
+const ciRunnerMode = extract(ciWorkflow, /runner_mode:\s*([^\n]+)/, 'CI runner mode');
+const publishMode = extract(publishWorkflow, /publish_mode:\s*([^\n]+)/, 'publish mode');
+const npmPublishMode = extract(publishWorkflow, /npm_publish_mode:\s*([^\n]+)/, 'npm publish mode');
 const publishNodeVersion = extract(publishWorkflow, /publish_node_version:\s*"([^"]+)"/, 'publish node version');
 const githubPackageName = extract(publishWorkflow, /github_package_name:\s*"([^"]+)"/, 'GitHub Packages name');
 const npmAccess = extract(publishWorkflow, /npm_access:\s*([^\n]+)/, 'npm access');
@@ -172,7 +175,10 @@ ${markdownTable(
   [
     ['npm package', `\`${packageJson.name}\``],
     ['npm access', `\`${npmAccess}\``],
+    ['npmjs publish mode', `\`${npmPublishMode}\``],
     ['GitHub Packages name', `\`${githubPackageName}\``],
+    ['CI runner mode', `\`${ciRunnerMode}\``],
+    ['Publish mode', `\`${publishMode}\``],
     ['CI node versions', `\`${ciNodeVersions}\``],
     ['Publish node version', `\`${publishNodeVersion}\``],
     ['Bazel targets', `\`${ciBazelTargets}\``],
