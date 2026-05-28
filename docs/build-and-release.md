@@ -34,6 +34,10 @@ That split is intentional. Nix bootstraps the tools, Bazel models the artifact
 graph, and the shared `js-bazel-package` workflow publishes from
 `./bazel-bin/pkg`.
 
+The active workflow contract uses repo-owned runner registration with Tinyland
+capability labels. npmjs publication is disabled; the publish path validates and
+publishes the Bazel artifact through GitHub Packages.
+
 ## Bazel Cache Contract
 
 Local Bazel use defaults to the repo-local disk cache in `.bazelrc`:
@@ -78,6 +82,7 @@ Version drift across those files is a bug.
 Before cutting a package release, verify these surfaces together:
 
 - npm package: `@tummycrypt/scheduling-kit`
+- npmjs publish mode: `disabled`
 - GitHub Packages package: `@jesssullivan/scheduling-kit`
 - tag and GitHub release for the package version
 - Bazel package artifact from `./bazel-bin/pkg`

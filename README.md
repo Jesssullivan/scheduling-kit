@@ -94,17 +94,18 @@ Longer term, the intended publish shape is:
 
 1. release metadata declared once
 2. Bazel defines and builds the publishable artifact
-3. GitHub Actions publishes that artifact to npm
-4. downstream apps consume the published package only
+3. GitHub Actions validates that artifact on the repo-owned package runner
+4. GitHub Packages is the package publish authority while npmjs publishing is disabled
+5. downstream apps consume the published package only
 
 ## Runner Authority
 
-Package CI and publish currently use the shared `js-bazel-package` workflow with
-`runner_mode: shared` and labels from `PRIMARY_LINUX_RUNNER_LABELS_JSON`.
+Package CI and publish use the shared `js-bazel-package` workflow with
+`runner_mode: repo_owned` and labels from `PRIMARY_LINUX_RUNNER_LABELS_JSON`.
+The workflow publishes through the hosted publish exception for GitHub Packages
+and explicitly disables npmjs publication.
 
-Treat that runner contract as pending proof until the repo Actions runner API
-and green workflow runs confirm the lane. Keep private runner topology and
-apply details out of this public repo.
+Keep private runner topology and apply details out of this public repo.
 
 ## Quick Start
 
