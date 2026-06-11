@@ -128,14 +128,14 @@ const generateAppointmentTypes = () => [
 const generateCalendars = () => [
   {
     id: 100,
-    name: 'Jennifer Sullivan, LMT',
-    email: 'jen@massageithaca.com',
+    name: 'Alex Rivera',
+    email: 'alex@example.com',
     thumbnail: null,
     image: null,
     description: 'Licensed Massage Therapist specializing in TMD and therapeutic massage',
     timezone: 'America/New_York',
-    replyTo: 'jen@massageithaca.com',
-    location: '950 Danby Rd (96B), South Hill Business Campus, Ithaca, NY 14850',
+    replyTo: 'alex@example.com',
+    location: '123 Main St, Suite 10, Springfield, ST 00000',
   },
 ];
 
@@ -203,11 +203,11 @@ const generateAppointment = () => ({
   type: 'TMD 1st Visit/Consultation',
   appointmentTypeID: 12345,
   calendarID: 100,
-  calendar: 'Jennifer Sullivan, LMT',
+  calendar: 'Alex Rivera',
   duration: '60',
   canClientCancel: true,
   canClientReschedule: true,
-  location: '950 Danby Rd (96B), South Hill Business Campus, Ithaca, NY 14850',
+  location: '123 Main St, Suite 10, Springfield, ST 00000',
   timezone: 'America/New_York',
   confirmationPage: 'https://example.acuityscheduling.com/schedule.php?owner=test&id=999999999',
   canceled: false,

@@ -41,7 +41,7 @@ import {
  * - Read ops delegate to a scraper (mocked here)
  * - Reservation returns BLOCK_FAILED (graceful degradation)
  * - Write ops go through Effect middleware (mocked for unit test)
- * - Single provider (Jennifer Whitaker)
+ * - Single provider (Alex Rivera)
  */
 const createMockWizardAdapter = (overrides?: Partial<SchedulingAdapter>): SchedulingAdapter => ({
   name: 'acuity-wizard',
@@ -56,21 +56,21 @@ const createMockWizardAdapter = (overrides?: Partial<SchedulingAdapter>): Schedu
   ),
   getProviders: vi.fn(() => Effect.succeed([{
     id: '1',
-    name: 'Jennifer Whitaker',
+    name: 'Alex Rivera',
     email: 'alex@example.com',
     description: 'LMT, BA - TMD Massage Specialist',
     timezone: 'America/New_York',
   }])),
   getProvider: vi.fn(() => Effect.succeed({
     id: '1',
-    name: 'Jennifer Whitaker',
+    name: 'Alex Rivera',
     email: 'alex@example.com',
     description: 'LMT, BA - TMD Massage Specialist',
     timezone: 'America/New_York',
   })),
   getProvidersForService: vi.fn(() => Effect.succeed([{
     id: '1',
-    name: 'Jennifer Whitaker',
+    name: 'Alex Rivera',
     email: 'alex@example.com',
     description: 'LMT, BA - TMD Massage Specialist',
     timezone: 'America/New_York',

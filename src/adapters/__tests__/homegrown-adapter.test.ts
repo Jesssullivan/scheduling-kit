@@ -949,6 +949,133 @@ describe("HomegrownAdapter", () => {
 
       expect(error._tag).toBe("InfrastructureError");
     });
+
+    it("surfaces the original unique violation when the replay lookup itself fails", async () => {
+      // Insert hits the unique index, then the recovery lookup also rejects
+      // (e.g. transient connection error). The root-cause unique violation
+      // must survive, not the secondary lookup failure.
+      let selectCall = 0;
+      const replayLookupFailure = new Error("connection terminated");
+      const selectSequence: (Record<string, unknown>[] | Error)[] = [
+        [], // pre-lookup miss
+        [SERVICE_ROW],
+        [CLIENT_ROW],
+        [PRACTITIONER_ROW],
+        replayLookupFailure, // replay lookup rejects
+      ];
+      const makeSelectChain = () => {
+        const entry = selectSequence[selectCall] ?? [];
+        selectCall++;
+        const terminal =
+          entry instanceof Error
+            ? vi.fn().mockRejectedValue(entry)
+            : vi.fn().mockResolvedValue(entry);
+        const terminals = { limit: terminal, orderBy: terminal };
+        return {
+          where: vi.fn().mockReturnValue(terminals),
+          orderBy: terminals.orderBy,
+          limit: terminals.limit,
+        };
+      };
+      const uniqueViolation = Object.assign(
+        new Error(
+          'duplicate key value violates unique constraint "bookings_idempotency_key_key"',
+        ),
+        { code: "23505" },
+      );
+      const mockDb = {
+        select: vi.fn().mockImplementation(() => ({
+          from: vi.fn().mockImplementation(makeSelectChain),
+        })),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockReturnValue({
+            returning: vi.fn().mockRejectedValue(uniqueViolation),
+          }),
+        }),
+        update: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(undefined),
+          }),
+        }),
+      };
+
+      const adapter = createAdapter({ getDb: async () => mockDb });
+      const error = await Effect.runPromise(
+        Effect.flip(
+          adapter.createBooking({
+            serviceId: "svc-uuid-1",
+            datetime: "2026-04-20T14:00:00.000Z",
+            client: TEST_CLIENT,
+            idempotencyKey: "idem-double-fault",
+          }),
+        ),
+      );
+
+      expect(error._tag).toBe("InfrastructureError");
+      expect(error).toMatchObject({
+        message: expect.stringContaining("duplicate key value"),
+      });
+      expect((error as { message: string }).message).not.toContain(
+        "connection terminated",
+      );
+    });
+
+    it("treats an empty-string idempotency key as absent and persists null", async () => {
+      // "" skips the pre-insert lookup entirely (first select is
+      // resolveService) and is normalized to null on insert so it can never
+      // occupy the unique index slot.
+      let selectCall = 0;
+      const selectSequence = [
+        [SERVICE_ROW], // resolveService (no pre-lookup before it)
+        [CLIENT_ROW], // findOrCreateClient email lookup
+        [PRACTITIONER_ROW], // getDefaultPractitioner
+      ];
+      const makeSelectChain = () => {
+        const rows = selectSequence[selectCall] ?? [];
+        selectCall++;
+        const terminals = {
+          limit: vi.fn().mockResolvedValue(rows),
+          orderBy: vi.fn().mockResolvedValue(rows),
+        };
+        return {
+          where: vi.fn().mockReturnValue(terminals),
+          orderBy: terminals.orderBy,
+          limit: terminals.limit,
+        };
+      };
+      const insertedValues: Record<string, unknown>[] = [];
+      const mockDb = {
+        select: vi.fn().mockImplementation(() => ({
+          from: vi.fn().mockImplementation(makeSelectChain),
+        })),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockImplementation((v: Record<string, unknown>) => {
+            insertedValues.push(v);
+            return { returning: vi.fn().mockResolvedValue([BOOKING_ROW]) };
+          }),
+        }),
+        update: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(undefined),
+          }),
+        }),
+      };
+
+      const adapter = createAdapter({ getDb: async () => mockDb });
+      const result = await Effect.runPromise(
+        adapter.createBooking({
+          serviceId: "svc-uuid-1",
+          datetime: "2026-04-20T14:00:00.000Z",
+          client: TEST_CLIENT,
+          idempotencyKey: "",
+        }),
+      );
+
+      expect(result.id).toBe("booking-uuid-1");
+      // Pre-insert dedup lookup skipped: exactly the 3 pipeline selects ran.
+      expect(mockDb.select).toHaveBeenCalledTimes(3);
+      expect(insertedValues[0].idempotencyKey).toBeNull();
+    });
   });
 
   // -------------------------------------------------------------------------

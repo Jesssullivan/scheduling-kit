@@ -230,6 +230,13 @@ export const createHomegrownAdapter = (
    * Known domain failures thrown via `domainError` surface as their typed
    * SchedulingError variants; everything else stays mapped to
    * InfrastructureError("UNKNOWN").
+   *
+   * CAUTION: the carrier only survives plain async throw/catch boundaries.
+   * Do NOT call `Effect.runPromise` on another adapter method inside an
+   * `fromAsync` body expecting typed errors to propagate — a failed nested
+   * run throws a FiberFailure, which is not a DomainErrorCarrier and will
+   * collapse to InfrastructureError("UNKNOWN"). Compose Effects with
+   * Effect.flatMap instead, or only nest runs whose error channel is empty.
    */
   const fromAsync = <A>(fn: () => Promise<A>): SchedulingResult<A> =>
     Effect.tryPromise({
@@ -792,6 +799,12 @@ export const createHomegrownAdapter = (
 
         // Idempotent replay: a duplicate submit with the same key returns the
         // original booking instead of inserting a second row.
+        //
+        // Replay-wins semantics: the request payload is NOT compared against
+        // the stored row — a caller reusing a key with a different payload
+        // receives the original booking (keys are caller-controlled; see
+        // BookingRequest.idempotencyKey). Empty-string keys are treated the
+        // same as absent keys (no dedup) and are normalized to null on insert.
         if (request.idempotencyKey) {
           const replay = await findByIdempotencyKey();
           if (replay) return replay;
@@ -843,7 +856,9 @@ export const createHomegrownAdapter = (
                 paymentStatus: "pending",
                 paymentMethod: request.paymentMethod ?? null,
                 amountCents: svc.priceCents,
-                idempotencyKey: request.idempotencyKey,
+                // Normalize "" to null so an unusable key never occupies the
+                // (schema-package-owned) unique index slot.
+                idempotencyKey: request.idempotencyKey || null,
               })
               .returning(),
           );
@@ -854,7 +869,15 @@ export const createHomegrownAdapter = (
           // the insert surfaces as a unique violation. Recover by replaying
           // the winning row.
           if (request.idempotencyKey && isUniqueViolation(e)) {
-            const replay = await findByIdempotencyKey();
+            // Guard the replay lookup: if it fails too (e.g. transient
+            // connection error), keep the original unique violation as the
+            // surfaced root cause instead of the secondary failure.
+            let replay: Booking | null = null;
+            try {
+              replay = await findByIdempotencyKey();
+            } catch {
+              throw e;
+            }
             if (replay) return replay;
           }
           throw e;
