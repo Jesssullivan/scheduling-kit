@@ -18,6 +18,7 @@ import type {
   PaymentClientConfig,
   ManualPaymentConfig,
 } from './types.js';
+import { DEFAULT_MANUAL_ADAPTER_NAME } from './types.js';
 
 // =============================================================================
 // MANUAL PAYMENT ADAPTER
@@ -29,7 +30,7 @@ import type {
  */
 export const createManualPaymentAdapter = (
   config: ManualPaymentConfig,
-  methodName: string = 'manual',
+  methodName: string = DEFAULT_MANUAL_ADAPTER_NAME,
   displayName: string = 'Pay Later'
 ): PaymentAdapter => {
   return {

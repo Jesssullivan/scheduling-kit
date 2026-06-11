@@ -38,33 +38,39 @@ The package should be reusable across multiple businesses. Avoid app-specific as
 
 ## Current Tracking
 
-As of `2026-05-02`, the active structural work is no longer just downstream
-contract cleanup. It is release-authority, artifact-truth, and runner-contract
-convergence.
+As of `2026-06-10`, release-authority, artifact-truth, and runner-contract
+convergence have largely landed. The active structural work is docs/toolchain
+truth normalization and the adopter capability contract.
 
 Active threads:
 
 - `TIN-89` package, Bazel, CI, publish, and dependency truth across shared
-  scheduling packages
-- `TIN-165` bazel-registry generation from standalone package truth
-- release, tag, npm, and GitHub release authority cleanup tracked in GitHub
-  issue `#73`
-- downstream Bzlmod consumer builds of `//:pkg` from the active registry
-- runner reachability and shared-runner proof before treating package CI as a
-  stable public workflow contract
+  scheduling packages; its current GitHub face is kit issues `#73`/`#75` and
+  bridge issues `#76`/`#78`
+- the kit-side half of `TIN-88`, the explicit site and backend capability
+  contract for reusable adopters, tracked as kit `#79` and bridge `#82`
+
+Closed but still relevant context:
+
+- `TIN-101` completed the mini sprint for toolchain authority and hermetic package convergence
+- `TIN-103` closed the release-authority ambiguity for `Jesssullivan/scheduling-kit`
+- `TIN-104` was canceled as a duplicate during that convergence work
+- `TIN-165` is done: the tinyland bazel-registry is generated from standalone
+  package truth and currently carries scheduling-kit `0.8.0` and
+  scheduling-bridge `0.5.11`; the registry line is in `.bazelrc`
+- `TIN-677` is done: HomegrownAdapter takes injected schemas from
+  `@tummycrypt/tinyland-business-pg`, with `tinyland-auth-pg` kept only as an
+  optional legacy fallback
 
 Current operational truth:
 
 - local development should default to `jesssullivan/main`
 - that branch is the current functional release line
-- current published package truth is `@tummycrypt/scheduling-kit` `0.7.7`
-  on npm, GitHub Releases, GitHub Packages, and the active tinyland Bazel
-  registry
-- `0.7.7` fixes downstream Bzlmod `//:pkg` consumption by making the Svelte
-  package build independent of main-workspace-relative `src` paths
-- the next release candidate should not reintroduce a mandatory
-  `tinyland-auth-pg` dependency for HomegrownAdapter; use explicit schema
-  injection and keep any auth-pg fallback optional
+- current published package truth is `@tummycrypt/scheduling-kit` `0.8.0`
+  on GitHub Releases, GitHub Packages, and the active tinyland Bazel registry
+- HomegrownAdapter does not require `tinyland-auth-pg`; schemas are injected
+  explicitly (canonically from `@tummycrypt/tinyland-business-pg`) and any
+  auth-pg fallback stays optional
 - `#73` remains open only for explicit historical release-surface
   backfill/documentation around older `0.7.1` / `0.7.2` gaps; the current
   release/tag/npm/Bazel/registry authority path is healthy
@@ -81,6 +87,10 @@ There are **two** build surfaces in this repo:
 2. Bazel defines and builds the publishable package artifact used by CI
 
 Do not confuse them.
+
+The repo flake and `.envrc` exist to make those surfaces reproducibly available
+from a fresh machine. They are bootstrap tools, not a second packaging
+authority.
 
 ### Canonical publish path
 
@@ -166,7 +176,7 @@ package truth across both remotes by accident.
 
 Current runner truth:
 
-- current workflows use `runner_mode: shared` and read shared runner labels from
+- current workflows use `runner_mode: repo_owned` and read runner labels from
   `PRIMARY_LINUX_RUNNER_LABELS_JSON`
 - do not describe the runner lane as fully proven until repo Actions runner
   visibility and green workflow runs confirm it

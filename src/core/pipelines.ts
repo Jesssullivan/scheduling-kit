@@ -18,7 +18,7 @@ import { Errors } from './types.js';
 import { validateWith, generateIdempotencyKey, withCorrelationId } from './utils.js';
 import type { SchedulingAdapter } from '../adapters/types.js';
 import type { PaymentAdapter, PaymentRegistry as CanonicalPaymentRegistry } from '../payments/types.js';
-import { createPaymentRegistry } from '../payments/types.js';
+import { createPaymentRegistry, toInternalPaymentMethodId, toPublicPaymentMethodId } from '../payments/types.js';
 import { z } from 'zod';
 import { parsePaymentRef } from './payment-ref.js';
 import type { PaymentReference } from './payment-ref.js';
@@ -95,7 +95,10 @@ export const completeBookingWithAltPayment = (
   const { scheduler, payments, correlationId } = ctx;
   const { request, paymentMethod } = input;
 
-  const paymentAdapter = payments.get(paymentMethod);
+  // Public ids ('card') resolve to internally named adapters ('stripe').
+  // Unsupported selections fail with a typed error — never a manual fallback.
+  const paymentAdapter =
+    payments.get(paymentMethod) ?? payments.get(toInternalPaymentMethodId(paymentMethod));
   if (!paymentAdapter) {
     return Effect.fail(Errors.payment('INVALID_METHOD', `Unknown payment method: ${paymentMethod}`, paymentMethod, false));
   }
@@ -327,7 +330,11 @@ export const cancelBookingWithRefund = (
       return { cancelled: true } satisfies CancellationResult;
     }
 
-    const paymentAdapter = payments.get(paymentRef.processor);
+    // Public ids ('card') resolve to internally named adapters ('stripe'),
+    // mirroring completeBookingWithAltPayment's resolution order.
+    const paymentAdapter =
+      payments.get(paymentRef.processor) ??
+      payments.get(toInternalPaymentMethodId(paymentRef.processor));
 
     if (!paymentAdapter) {
       return { cancelled: true, refund: { success: false } } satisfies CancellationResult;
@@ -382,6 +389,16 @@ export const createSchedulingKit = (
   const payments = new Map<string, PaymentAdapter>();
   for (const a of registry.getAll()) {
     payments.set(a.name, a);
+  }
+  // Alias the canonical public id ('card' -> stripe adapter) so booking
+  // flows driven by public selections resolve the correct processor. Aliases
+  // only claim unclaimed ids: a literally named adapter always wins over an
+  // alias regardless of registration order, matching registry.get() precedence.
+  for (const a of registry.getAll()) {
+    const publicId = toPublicPaymentMethodId(a.name);
+    if (!payments.has(publicId)) {
+      payments.set(publicId, a);
+    }
   }
 
   return {

@@ -2,7 +2,7 @@
  * Homegrown Scheduling Adapter
  *
  * Direct PG-backed scheduling — replaces Acuity browser automation.
- * Implements the full SchedulingAdapter interface (16 methods) using
+ * Implements the full SchedulingAdapter interface (17 methods) using
  * Drizzle ORM queries against Neon PostgreSQL.
  *
  * Feature-flagged: only active when SCHEDULING_BACKEND=homegrown

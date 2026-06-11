@@ -23,6 +23,7 @@ const svelteConfig = eslintPluginSvelte.configs['flat/recommended'].map((config)
 export default [
   {
     ignores: [
+      '.claude/**',
       '.svelte-kit/**',
       'bazel-*/**',
       'coverage/**',
@@ -31,6 +32,7 @@ export default [
       'pkg/**',
       'pkg-github/**',
       'playwright-report/**',
+      'site/**',
       'test-results/**',
     ],
   },

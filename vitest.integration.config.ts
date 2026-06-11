@@ -10,13 +10,8 @@ export default defineConfig({
     setupFiles: ['src/tests/setup.ts'],
     // Integration tests may need longer timeouts
     testTimeout: 30000,
-    // Run integration tests sequentially to avoid race conditions
-    pool: 'threads',
-    poolOptions: {
-      threads: {
-        singleThread: true,
-      },
-    },
+    // Run integration test files sequentially to avoid shared-state races.
+    fileParallelism: false,
   },
   resolve: {
     conditions: ['browser'],

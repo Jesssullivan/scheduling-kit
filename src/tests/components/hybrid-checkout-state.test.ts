@@ -3,8 +3,17 @@
  *
  * The component lives in a .svelte file, so we re-implement the pure
  * state transition functions here and test them in a Node environment.
+ * The payment-method guards are NOT re-implemented: routePayment uses the
+ * real isCardPaymentMethodId/isManualPaymentMethodId from payments/types.js
+ * (the single owner of that normalization), so guard drift fails this suite.
+ * Render-level coverage of the real handlePaymentSelect lives in
+ * tests/e2e/hybrid-checkout-drawer.test.ts.
  */
 import { describe, it, expect } from 'vitest';
+import {
+  isCardPaymentMethodId,
+  isManualPaymentMethodId,
+} from '../../payments/types.js';
 
 // ---------------------------------------------------------------------------
 // Re-implemented pure logic from HybridCheckoutDrawer.svelte
@@ -85,12 +94,13 @@ interface PaymentOption {
   id: string;
 }
 
-// Simulates the $derived paymentOptions with all adapters configured
+// Simulates the $derived paymentOptions with all adapters configured.
+// Capabilities emit the canonical public 'card' id, never internal 'stripe'.
 const buildPaymentOptions = (opts: { hasVenmo?: boolean; hasStripe?: boolean } = {}): PaymentOption[] => {
   const { hasVenmo = true, hasStripe = false } = opts;
   const result: PaymentOption[] = [];
   if (hasVenmo) result.push({ id: 'venmo' });
-  if (hasStripe) result.push({ id: 'stripe' });
+  if (hasStripe) result.push({ id: 'card' });
   result.push({ id: 'cash' });
   return result;
 };
@@ -98,10 +108,15 @@ const buildPaymentOptions = (opts: { hasVenmo?: boolean; hasStripe?: boolean } =
 // Default: Venmo + Cash (no Stripe, matching original behavior)
 const paymentOptions = buildPaymentOptions();
 
+// Mirrors HybridCheckoutDrawer.handlePaymentSelect's branch ordering, but
+// routes through the REAL shared guards imported from payments/types.js.
 const routePayment = (paymentId: string, hasPaypalSdk: boolean, hasStripeSdk: boolean = false): HybridStep => {
   if (paymentId === 'venmo' && hasPaypalSdk) return 'venmo-checkout';
-  if (paymentId === 'stripe' && hasStripeSdk) return 'stripe-checkout';
-  return 'processing';
+  if (paymentId === 'venmo') return 'error';
+  if (isCardPaymentMethodId(paymentId) && hasStripeSdk) return 'stripe-checkout';
+  if (isCardPaymentMethodId(paymentId)) return 'error';
+  if (isManualPaymentMethodId(paymentId)) return 'processing';
+  return 'error';
 };
 
 const formatPrice = (cents: number): string =>
@@ -290,25 +305,26 @@ describe('HybridCheckoutDrawer state machine', () => {
   // 5. Payment routing
   // -----------------------------------------------------------------------
   describe('routePayment', () => {
-    it('should route card to processing when no SDK', () => {
-      expect(routePayment('card', false)).toBe('processing');
-      expect(routePayment('card', true)).toBe('processing');
+    it('should route the public card id with Stripe SDK to stripe-checkout', () => {
+      expect(routePayment('card', false, true)).toBe('stripe-checkout');
     });
 
-    it('should route stripe with Stripe SDK to stripe-checkout', () => {
+    it('should keep the legacy stripe alias routing to stripe-checkout', () => {
       expect(routePayment('stripe', false, true)).toBe('stripe-checkout');
     });
 
-    it('should route stripe without Stripe SDK to processing', () => {
-      expect(routePayment('stripe', false, false)).toBe('processing');
+    it('should fail card-like selections when Stripe is unavailable (no manual fallback)', () => {
+      expect(routePayment('card', false, false)).toBe('error');
+      expect(routePayment('card', true, false)).toBe('error');
+      expect(routePayment('stripe', false, false)).toBe('error');
     });
 
     it('should route venmo with PayPal SDK to venmo-checkout', () => {
       expect(routePayment('venmo', true)).toBe('venmo-checkout');
     });
 
-    it('should route venmo without PayPal SDK to processing', () => {
-      expect(routePayment('venmo', false)).toBe('processing');
+    it('should fail venmo when PayPal is unavailable (no manual fallback)', () => {
+      expect(routePayment('venmo', false)).toBe('error');
     });
 
     it('should route cash to processing', () => {
@@ -316,9 +332,22 @@ describe('HybridCheckoutDrawer state machine', () => {
       expect(routePayment('cash', true)).toBe('processing');
     });
 
-    it('should route unknown payment methods to processing', () => {
-      expect(routePayment('bitcoin', false)).toBe('processing');
+    it('should route explicit manual payment methods to processing', () => {
       expect(routePayment('check', true)).toBe('processing');
+      expect(routePayment('zelle', false)).toBe('processing');
+      expect(routePayment('venmo-direct', false)).toBe('processing');
+      expect(routePayment('other', false)).toBe('processing');
+    });
+
+    it("should route the kit's default manual adapter name to processing", () => {
+      // createManualPaymentAdapter ships with methodName 'manual'; the
+      // drawer must not hard-error the kit's own factory default.
+      expect(routePayment('manual', false)).toBe('processing');
+    });
+
+    it('should fail unknown payment methods instead of manual completion', () => {
+      expect(routePayment('bitcoin', false)).toBe('error');
+      expect(routePayment('', true)).toBe('error');
     });
   });
 
@@ -420,7 +449,7 @@ describe('HybridCheckoutDrawer state machine', () => {
       expect(stepTitles[step]).toBe('Booking Confirmed');
     });
 
-    it('should complete a stripe flow: service -> ... -> stripe-checkout -> complete', () => {
+    it('should complete a card flow: service -> ... -> stripe-checkout -> complete', () => {
       let step: HybridStep = 'service';
 
       step = forwardTransitions[step] as HybridStep;
@@ -429,7 +458,7 @@ describe('HybridCheckoutDrawer state machine', () => {
       step = forwardTransitions[step] as HybridStep;
       expect(step).toBe('payment');
 
-      step = routePayment('stripe', false, true);
+      step = routePayment('card', false, true);
       expect(step).toBe('stripe-checkout');
       expect(canGoBack(step)).toBe(false);
 
@@ -442,7 +471,7 @@ describe('HybridCheckoutDrawer state machine', () => {
       expect(stepTitles[step]).toBe('Booking Confirmed');
     });
 
-    it('should complete a card flow: service -> ... -> processing -> complete', () => {
+    it('should fail a card flow when Stripe is unavailable instead of manual completion', () => {
       let step: HybridStep = 'service';
 
       step = forwardTransitions[step] as HybridStep;
@@ -452,11 +481,11 @@ describe('HybridCheckoutDrawer state machine', () => {
       expect(step).toBe('payment');
 
       step = routePayment('card', false);
-      expect(step).toBe('processing');
-      expect(canGoBack(step)).toBe(false);
+      expect(step).toBe('error');
 
-      step = 'complete';
-      expect(stepTitles[step]).toBe('Booking Confirmed');
+      // Error is recoverable back to payment selection
+      expect(canGoBack(step)).toBe(true);
+      expect(handleBack(step)).toBe('payment');
     });
 
     it('should complete a cash flow: service -> ... -> processing -> complete', () => {
@@ -531,10 +560,11 @@ describe('HybridCheckoutDrawer state machine', () => {
       expect(ids).toContain('cash');
     });
 
-    it('should include stripe when configured', () => {
+    it('should include the public card id when Stripe is configured', () => {
       const opts = buildPaymentOptions({ hasVenmo: true, hasStripe: true });
       expect(opts).toHaveLength(3);
-      expect(opts.map((p) => p.id)).toEqual(['venmo', 'stripe', 'cash']);
+      expect(opts.map((p) => p.id)).toEqual(['venmo', 'card', 'cash']);
+      expect(opts.map((p) => p.id)).not.toContain('stripe');
     });
 
     it('should show only cash when no adapters configured', () => {

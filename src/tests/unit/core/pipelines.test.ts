@@ -172,6 +172,51 @@ describe('completeBookingWithAltPayment', () => {
     }
   });
 
+  it('resolves the public card id to the internally named stripe adapter', async () => {
+    const stripe = createMockPaymentAdapter('stripe');
+    const cardCtx: PipelineContext = {
+      scheduler,
+      payments: new Map([['stripe', stripe]]),
+      correlationId: 'test-correlation-id',
+    };
+
+    const result = await expectSuccess(
+      completeBookingWithAltPayment(cardCtx, { ...input, paymentMethod: 'card' })
+    );
+
+    expect(result.payment.success).toBe(true);
+    expect(stripe.createIntent).toHaveBeenCalled();
+    expect(stripe.capturePayment).toHaveBeenCalled();
+  });
+
+  it('fails unsupported card selection with a typed error instead of a manual adapter', async () => {
+    // Only a manual cash adapter is registered; the public 'card' selection
+    // must NOT fall through to it.
+    const error = await expectFailureTag(
+      completeBookingWithAltPayment(ctx, { ...input, paymentMethod: 'card' }),
+      'PaymentError'
+    );
+
+    expect(error._tag).toBe('PaymentError');
+    if (error._tag === 'PaymentError') {
+      expect(error.code).toBe('INVALID_METHOD');
+    }
+    expect(paymentAdapter.createIntent).not.toHaveBeenCalled();
+  });
+
+  it('fails unsupported venmo selection with a typed error instead of a manual adapter', async () => {
+    const error = await expectFailureTag(
+      completeBookingWithAltPayment(ctx, { ...input, paymentMethod: 'venmo' }),
+      'PaymentError'
+    );
+
+    expect(error._tag).toBe('PaymentError');
+    if (error._tag === 'PaymentError') {
+      expect(error.code).toBe('INVALID_METHOD');
+    }
+    expect(paymentAdapter.createIntent).not.toHaveBeenCalled();
+  });
+
   it('returns validation error for invalid request', async () => {
     const invalidInput: BookingPipelineInput = {
       ...input,
@@ -633,6 +678,67 @@ describe('createSchedulingKit', () => {
     );
 
     expect(result.booking).toBeDefined();
+  });
+
+  it('aliases stripe adapters behind the public card id', async () => {
+    const stripe = createMockPaymentAdapter('stripe');
+    const kit = createSchedulingKit(scheduler, [stripe]);
+
+    expect(kit.payments.get('stripe')).toBe(stripe);
+    expect(kit.payments.get('card')).toBe(stripe);
+
+    const methods = await kit.payments.getAvailableMethods();
+    expect(methods.map((m) => m.id)).toEqual(['card']);
+    expect(methods.map((m) => m.id)).not.toContain('stripe');
+  });
+
+  it('never lets the stripe alias clobber a literally named card adapter', async () => {
+    // Registration order must not decide who owns the 'card' id: the
+    // literally named adapter wins, matching registry.get() precedence.
+    for (const order of ['card-first', 'stripe-first'] as const) {
+      const card = createMockPaymentAdapter('card');
+      const stripe = createMockPaymentAdapter('stripe');
+      const adapters = order === 'card-first' ? [card, stripe] : [stripe, card];
+      const kit = createSchedulingKit(scheduler, adapters);
+
+      expect(kit.payments.get('card')).toBe(card);
+      expect(kit.payments.get('stripe')).toBe(stripe);
+
+      const result = await expectSuccess(
+        kit.completeBooking(createBookingRequest(), 'card')
+      );
+
+      expect(result.booking).toBeDefined();
+      expect(card.createIntent).toHaveBeenCalled();
+      expect(stripe.createIntent).not.toHaveBeenCalled();
+    }
+  });
+
+  it('completeBooking accepts the public card id for stripe-backed flows', async () => {
+    const stripe = createMockPaymentAdapter('stripe');
+    const kit = createSchedulingKit(scheduler, [stripe]);
+
+    const result = await expectSuccess(
+      kit.completeBooking(createBookingRequest(), 'card')
+    );
+
+    expect(result.booking).toBeDefined();
+    expect(stripe.createIntent).toHaveBeenCalled();
+    expect(stripe.capturePayment).toHaveBeenCalled();
+  });
+
+  it('completeBooking rejects card when no card-capable adapter is registered', async () => {
+    const kit = createSchedulingKit(scheduler, [paymentAdapter]);
+
+    const error = await expectFailureTag(
+      kit.completeBooking(createBookingRequest(), 'card'),
+      'PaymentError'
+    );
+
+    if (error._tag === 'PaymentError') {
+      expect(error.code).toBe('INVALID_METHOD');
+    }
+    expect(paymentAdapter.createIntent).not.toHaveBeenCalled();
   });
 
   it('getAvailability delegates to pipeline', async () => {

@@ -6,8 +6,27 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import PaymentSelector from '../../src/components/PaymentSelector.svelte';
+import { toPublicPaymentMethodOption } from '../../src/payments/types.js';
+import type { PaymentAdapter } from '../../src/payments/types.js';
 
-// Mock payment methods
+// Stripe-named adapter stub: only the members consumed by
+// toPublicPaymentMethodOption matter for these tests.
+const stripeAdapterStub = {
+  name: 'stripe',
+  displayName: 'Credit/Debit Card',
+  icon: 'stripe',
+  getClientConfig: () => ({
+    name: 'stripe',
+    displayName: 'Credit/Debit Card',
+    icon: 'stripe',
+    environment: 'production' as const,
+    supportedCurrencies: ['USD'],
+  }),
+} as unknown as PaymentAdapter;
+
+// Mock payment methods. The card option is built by the kit's own boundary
+// mapper from an internally named 'stripe' adapter, so the canonical-id
+// assertions below cover the real normalization, not a hand-written fixture.
 const createMockPaymentMethods = () => [
   {
     id: 'venmo',
@@ -24,12 +43,10 @@ const createMockPaymentMethods = () => [
     icon: 'cash',
   },
   {
-    id: 'stripe',
-    displayName: 'Credit Card',
+    // Kit-built option: id/name must be the public 'card', never 'stripe'
+    ...toPublicPaymentMethodOption(stripeAdapterStub),
     description: 'Pay with card',
-    available: true,
     processingFeePercent: 2.9,
-    icon: 'stripe',
   },
   {
     id: 'disabled',
@@ -57,7 +74,20 @@ describe('PaymentSelector Component', () => {
 
     expect(screen.getByText('Venmo')).toBeInTheDocument();
     expect(screen.getByText('Cash')).toBeInTheDocument();
-    expect(screen.getByText('Credit Card')).toBeInTheDocument();
+    expect(screen.getByText('Credit/Debit Card')).toBeInTheDocument();
+  });
+
+  it('reports the canonical card id when the card method is selected', async () => {
+    const onSelect = vi.fn();
+    render(PaymentSelector, {
+      props: { methods: createMockPaymentMethods(), amount: 10000, onSelect },
+    });
+
+    const cardButton = screen.getByText('Credit/Debit Card').closest('button');
+    await fireEvent.click(cardButton!);
+
+    expect(onSelect).toHaveBeenCalledWith('card');
+    expect(onSelect).not.toHaveBeenCalledWith('stripe');
   });
 
   it('shows loading state', () => {
