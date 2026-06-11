@@ -134,6 +134,21 @@ js_library(
     name = "scheduling_kit",
     srcs = [":scheduling_kit_build"],
     tags = ["manual"],
+    # Runtime dependencies (package.json "dependencies") that consumers do not
+    # provide themselves. Declaring them here carries their npm package store
+    # infos through //:pkg so Bazel consumers that link this module via
+    # npm_link_package (e.g. scheduling-bridge) get the dep store entries
+    # linked next to the package.
+    #
+    # `effect` is intentionally NOT linked: consumers declare their own copy
+    # and effect values cross the package boundary (e.g. re-exported Errors),
+    # so a second linked copy would fork runtime identity (instanceof) and
+    # break consumer declaration emit (TS2742) with duplicate type roots.
+    # Peer dependencies are likewise excluded; consumers provide them.
+    deps = [
+        ":node_modules/drizzle-orm",
+        ":node_modules/zod",
+    ],
     visibility = ["//visibility:public"],
 )
 
