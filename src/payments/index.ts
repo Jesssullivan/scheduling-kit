@@ -5,6 +5,13 @@
 // Types
 export * from './types.js';
 
+// Payment capability extraction (canonical; scheduling-bridge delegates here)
+export {
+  extractCapabilities,
+  type PractitionerPaymentSettings,
+  type PlatformPaymentEnv,
+} from './capabilities.js';
+
 // Venmo Adapter
 export { createVenmoAdapter } from './venmo.js';
 

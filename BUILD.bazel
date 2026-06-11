@@ -9,6 +9,8 @@ Subpackage structure:
   //src/core         - SchedulingAdapter interface, types, Effect wrappers
   //src/adapters     - HomegrownAdapter (PostgreSQL/Drizzle)
   //src/payments     - Stripe, Venmo/PayPal, manual payment adapters
+  //src/onboarding   - Payment provider onboarding (credentials, OAuth, webhooks)
+  //src/capabilities - Scheduling runtime capability contract + resolver
   //src/components   - 12 Svelte checkout UI components
   //src/stores       - Svelte stores (checkout state)
   //src/lib          - Utilities (URL builder, Acuity listener)
@@ -204,6 +206,19 @@ ts_project(
         ":core",
         ":node_modules",
         ":node_modules/effect",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+ts_project(
+    name = "capabilities",
+    srcs = glob(["src/capabilities/**/*.ts"], exclude = ["src/capabilities/**/*.test.ts"]),
+    declaration = True,
+    tsconfig = ":tsconfig.json",
+    transpiler = "tsc",
+    validate = False,
+    deps = [
+        ":node_modules",
     ],
     visibility = ["//visibility:public"],
 )
