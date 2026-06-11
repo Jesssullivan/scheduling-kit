@@ -122,7 +122,7 @@ function prepareWritableProject(inputDir) {
   return { tempRoot, workDir };
 }
 
-const forwardedArgs = [];
+const parsedArgs = [];
 let resolvedInput;
 let outputDir = "dist";
 for (let index = 0; index < process.argv.length - 2; index += 1) {
@@ -130,36 +130,59 @@ for (let index = 0; index < process.argv.length - 2; index += 1) {
 
   if (arg === "-i" || arg === "--input") {
     resolvedInput = resolveExistingPath(process.argv[index + 3]);
-    forwardedArgs.push(arg, "src");
+    parsedArgs.push({ kind: "input", flag: arg });
     index += 1;
     continue;
   }
 
   if (arg.startsWith("--input=")) {
     resolvedInput = resolveExistingPath(arg.slice("--input=".length));
-    forwardedArgs.push("--input=src");
+    parsedArgs.push({ kind: "input", flag: "--input=" });
     continue;
   }
 
   if (arg === "-o" || arg === "--output") {
     outputDir = process.argv[index + 3];
-    forwardedArgs.push(arg, path.resolve(originalCwd, outputDir));
+    parsedArgs.push({ kind: "output", flag: arg });
     index += 1;
     continue;
   }
 
   if (arg.startsWith("--output=")) {
     outputDir = arg.slice("--output=".length);
-    forwardedArgs.push(`--output=${path.resolve(originalCwd, outputDir)}`);
+    parsedArgs.push({ kind: "output", flag: "--output=" });
     continue;
   }
 
-  forwardedArgs.push(arg);
+  parsedArgs.push({ kind: "raw", value: arg });
 }
 
 if (!resolvedInput) {
   throw new Error("Missing required svelte-package input directory");
 }
+
+// Anchor the output directory next to the resolved input tree artifact, which
+// lives in the declared output package directory of this module. Resolving
+// against the action cwd (BAZEL_BINDIR) breaks when this module is built as a
+// Bazel external module (bazel_dep consumer): declared outputs live under
+// bazel-out/.../bin/external/<repo>/, while cwd stays at the bindir root, so
+// svelte-package would write outside the declared output tree and Bazel would
+// silently package an empty dist/.
+const resolvedOutput = path.isAbsolute(outputDir)
+  ? outputDir
+  : path.resolve(path.dirname(resolvedInput), outputDir);
+
+const forwardedArgs = parsedArgs.flatMap((entry) => {
+  if (entry.kind === "input") {
+    return entry.flag === "--input=" ? ["--input=src"] : [entry.flag, "src"];
+  }
+  if (entry.kind === "output") {
+    return entry.flag === "--output="
+      ? [`--output=${resolvedOutput}`]
+      : [entry.flag, resolvedOutput];
+  }
+  return [entry.value];
+});
 
 const { tempRoot, workDir } = prepareWritableProject(resolvedInput);
 const result = spawnSync(
