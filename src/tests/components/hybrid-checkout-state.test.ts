@@ -3,8 +3,17 @@
  *
  * The component lives in a .svelte file, so we re-implement the pure
  * state transition functions here and test them in a Node environment.
+ * The payment-method guards are NOT re-implemented: routePayment uses the
+ * real isCardPaymentMethodId/isManualPaymentMethodId from payments/types.js
+ * (the single owner of that normalization), so guard drift fails this suite.
+ * Render-level coverage of the real handlePaymentSelect lives in
+ * tests/e2e/hybrid-checkout-drawer.test.ts.
  */
 import { describe, it, expect } from 'vitest';
+import {
+  isCardPaymentMethodId,
+  isManualPaymentMethodId,
+} from '../../payments/types.js';
 
 // ---------------------------------------------------------------------------
 // Re-implemented pure logic from HybridCheckoutDrawer.svelte
@@ -99,12 +108,8 @@ const buildPaymentOptions = (opts: { hasVenmo?: boolean; hasStripe?: boolean } =
 // Default: Venmo + Cash (no Stripe, matching original behavior)
 const paymentOptions = buildPaymentOptions();
 
-const isCardPaymentMethodId = (paymentId: string): boolean =>
-  paymentId === 'card' || paymentId === 'stripe';
-
-const isManualPaymentMethodId = (paymentId: string): boolean =>
-  ['cash', 'check', 'zelle', 'venmo-direct', 'other'].includes(paymentId);
-
+// Mirrors HybridCheckoutDrawer.handlePaymentSelect's branch ordering, but
+// routes through the REAL shared guards imported from payments/types.js.
 const routePayment = (paymentId: string, hasPaypalSdk: boolean, hasStripeSdk: boolean = false): HybridStep => {
   if (paymentId === 'venmo' && hasPaypalSdk) return 'venmo-checkout';
   if (paymentId === 'venmo') return 'error';
@@ -332,6 +337,12 @@ describe('HybridCheckoutDrawer state machine', () => {
       expect(routePayment('zelle', false)).toBe('processing');
       expect(routePayment('venmo-direct', false)).toBe('processing');
       expect(routePayment('other', false)).toBe('processing');
+    });
+
+    it("should route the kit's default manual adapter name to processing", () => {
+      // createManualPaymentAdapter ships with methodName 'manual'; the
+      // drawer must not hard-error the kit's own factory default.
+      expect(routePayment('manual', false)).toBe('processing');
     });
 
     it('should fail unknown payment methods instead of manual completion', () => {

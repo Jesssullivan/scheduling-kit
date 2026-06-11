@@ -12,6 +12,7 @@ import {
   PUBLIC_CARD_PAYMENT_METHOD_ID,
   INTERNAL_STRIPE_PAYMENT_METHOD_ID,
   MANUAL_PAYMENT_METHOD_IDS,
+  DEFAULT_MANUAL_ADAPTER_NAME,
   toPublicPaymentMethodId,
   toInternalPaymentMethodId,
   isCardPaymentMethodId,
@@ -142,6 +143,13 @@ describe('payment method id normalization', () => {
       }
     });
 
+    it("accepts the kit's default manual adapter name", () => {
+      // createManualPaymentAdapter defaults to methodName 'manual'; checkout
+      // surfaces must be able to route the kit's own factory default.
+      expect(isManualPaymentMethodId(DEFAULT_MANUAL_ADAPTER_NAME)).toBe(true);
+      expect(isManualPaymentMethodId('manual')).toBe(true);
+    });
+
     it('rejects card-like and venmo ids so they cannot reach manual completion', () => {
       expect(isManualPaymentMethodId('card')).toBe(false);
       expect(isManualPaymentMethodId('stripe')).toBe(false);
@@ -189,6 +197,21 @@ describe('toPublicPaymentMethodOption', () => {
     const cash = createMockAdapter('cash');
     expect(toPublicPaymentMethodOption(cash).icon).toBeUndefined();
   });
+
+  it('passes emoji and custom icon tokens through untouched', () => {
+    const venmo = createMockAdapter('venmo', { icon: '💙' });
+    expect(toPublicPaymentMethodOption(venmo).icon).toBe('💙');
+
+    const stripeWithEmoji = createMockAdapter('stripe', { icon: '💳' });
+    expect(toPublicPaymentMethodOption(stripeWithEmoji).icon).toBe('💳');
+  });
+
+  it("does not rewrite another adapter's icon that is literally 'stripe'", () => {
+    // Icon tokens are a separate domain from method ids: only the stripe
+    // adapter's own legacy 'stripe' icon token maps to 'card'.
+    const unrelated = createMockAdapter('venmo', { icon: 'stripe' });
+    expect(toPublicPaymentMethodOption(unrelated).icon).toBe('stripe');
+  });
 });
 
 // =============================================================================
@@ -223,6 +246,30 @@ describe('createPaymentRegistry public id resolution', () => {
 
     expect(ids).toEqual(['card', 'venmo']);
     expect(ids).not.toContain('stripe');
+  });
+
+  it('prefers a literally named card adapter over the stripe alias, in either registration order', async () => {
+    for (const order of [
+      ['card', 'stripe'],
+      ['stripe', 'card'],
+    ] as const) {
+      const registry = createPaymentRegistry();
+      const adaptersByName = {
+        card: createMockAdapter('card', { displayName: 'Literal Card' }),
+        stripe: createMockAdapter('stripe', { displayName: 'Stripe Card' }),
+      };
+      for (const name of order) registry.register(adaptersByName[name]);
+
+      // get() precedence: literal registration wins over the alias
+      expect(registry.get('card')).toBe(adaptersByName.card);
+
+      // No duplicate ids emitted (would break keyed {#each} blocks), and
+      // the surviving option belongs to the literally named adapter.
+      const methods = await registry.getAvailableMethods();
+      const cardOptions = methods.filter((m) => m.id === 'card');
+      expect(cardOptions).toHaveLength(1);
+      expect(cardOptions[0].displayName).toBe('Literal Card');
+    }
   });
 
   it('aligns emitted ids with the PaymentCapabilities contract (card/venmo, cash false)', async () => {

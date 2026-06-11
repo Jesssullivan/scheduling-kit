@@ -557,6 +557,28 @@ describe('createSchedulingKit', () => {
     expect(methods.map((m) => m.id)).not.toContain('stripe');
   });
 
+  it('never lets the stripe alias clobber a literally named card adapter', async () => {
+    // Registration order must not decide who owns the 'card' id: the
+    // literally named adapter wins, matching registry.get() precedence.
+    for (const order of ['card-first', 'stripe-first'] as const) {
+      const card = createMockPaymentAdapter('card');
+      const stripe = createMockPaymentAdapter('stripe');
+      const adapters = order === 'card-first' ? [card, stripe] : [stripe, card];
+      const kit = createSchedulingKit(scheduler, adapters);
+
+      expect(kit.payments.get('card')).toBe(card);
+      expect(kit.payments.get('stripe')).toBe(stripe);
+
+      const result = await expectSuccess(
+        kit.completeBooking(createBookingRequest(), 'card')
+      );
+
+      expect(result.booking).toBeDefined();
+      expect(card.createIntent).toHaveBeenCalled();
+      expect(stripe.createIntent).not.toHaveBeenCalled();
+    }
+  });
+
   it('completeBooking accepts the public card id for stripe-backed flows', async () => {
     const stripe = createMockPaymentAdapter('stripe');
     const kit = createSchedulingKit(scheduler, [stripe]);
