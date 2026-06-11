@@ -151,7 +151,7 @@ export interface StripeAdapterConfig {
 
 export interface ManualPaymentConfig {
   readonly type: 'manual';
-  readonly methods: ('cash' | 'check' | 'zelle' | 'venmo-direct' | 'other')[];
+  readonly methods: ManualPaymentMethodId[];
   readonly instructions?: Record<string, string>;
 }
 
@@ -159,6 +159,53 @@ export type PaymentAdapterConfig =
   | VenmoAdapterConfig
   | StripeAdapterConfig
   | ManualPaymentConfig;
+
+// =============================================================================
+// PUBLIC PAYMENT METHOD ID NORMALIZATION
+// =============================================================================
+//
+// Public booking surfaces use canonical public ids ('card', 'venmo', ...).
+// 'stripe' is an internal adapter/processor name and must never leak as a
+// public payment method id. This is the single owner of that normalization;
+// consumers must not carry their own copies.
+
+/** Canonical public id for card payments on booking surfaces. */
+export const PUBLIC_CARD_PAYMENT_METHOD_ID = 'card';
+
+/** Internal adapter name for the Stripe processor. Never a public id. */
+export const INTERNAL_STRIPE_PAYMENT_METHOD_ID = 'stripe';
+
+/** Manual payment methods that complete in-app without a processor SDK. */
+export const MANUAL_PAYMENT_METHOD_IDS = [
+  'cash',
+  'check',
+  'zelle',
+  'venmo-direct',
+  'other',
+] as const;
+
+export type ManualPaymentMethodId = (typeof MANUAL_PAYMENT_METHOD_IDS)[number];
+
+/** Map an internal adapter name to the canonical public payment method id. */
+export const toPublicPaymentMethodId = (paymentMethodId: string): string =>
+  paymentMethodId === INTERNAL_STRIPE_PAYMENT_METHOD_ID
+    ? PUBLIC_CARD_PAYMENT_METHOD_ID
+    : paymentMethodId;
+
+/** Map a public payment method id back to the internal adapter name. */
+export const toInternalPaymentMethodId = (paymentMethodId: string): string =>
+  paymentMethodId === PUBLIC_CARD_PAYMENT_METHOD_ID
+    ? INTERNAL_STRIPE_PAYMENT_METHOD_ID
+    : paymentMethodId;
+
+/** True for the public card id and the legacy internal stripe alias. */
+export const isCardPaymentMethodId = (paymentMethodId: string): boolean =>
+  paymentMethodId === PUBLIC_CARD_PAYMENT_METHOD_ID ||
+  paymentMethodId === INTERNAL_STRIPE_PAYMENT_METHOD_ID;
+
+/** True only for explicit manual methods; unknown ids are NOT manual. */
+export const isManualPaymentMethodId = (paymentMethodId: string): boolean =>
+  (MANUAL_PAYMENT_METHOD_IDS as readonly string[]).includes(paymentMethodId);
 
 // =============================================================================
 // PAYMENT METHOD SELECTION
@@ -244,6 +291,25 @@ export const getDefaultCapabilities = (): PaymentCapabilities => ({
   cash: false,
 });
 
+/**
+ * Build the public-facing method option for an adapter.
+ *
+ * Shared by the registry and checkout surfaces so the public id never
+ * diverges from the internal adapter name in one place but not another.
+ */
+export const toPublicPaymentMethodOption = (adapter: PaymentAdapter): PaymentMethodOption => {
+  const config = adapter.getClientConfig();
+  const publicId = toPublicPaymentMethodId(adapter.name);
+
+  return {
+    id: publicId,
+    name: publicId,
+    displayName: config.displayName,
+    icon: config.icon ? toPublicPaymentMethodId(config.icon) : undefined,
+    available: true,
+  };
+};
+
 export const createPaymentRegistry = (): PaymentRegistry => {
   const adapters = new Map<string, PaymentAdapter>();
 
@@ -252,7 +318,8 @@ export const createPaymentRegistry = (): PaymentRegistry => {
       adapters.set(adapter.name, adapter);
     },
 
-    get: (name) => adapters.get(name),
+    // Resolve public ids ('card') to internally named adapters ('stripe')
+    get: (name) => adapters.get(name) ?? adapters.get(toInternalPaymentMethodId(name)),
 
     getAll: () => Array.from(adapters.values()),
 
@@ -263,14 +330,7 @@ export const createPaymentRegistry = (): PaymentRegistry => {
         try {
           const available = await Effect.runPromise(adapter.isAvailable());
           if (available) {
-            const config = adapter.getClientConfig();
-            methods.push({
-              id: adapter.name,
-              name: adapter.name,
-              displayName: config.displayName,
-              icon: config.icon,
-              available: true,
-            });
+            methods.push(toPublicPaymentMethodOption(adapter));
           }
         } catch {
           // Adapter unavailable — skip
