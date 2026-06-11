@@ -18,8 +18,10 @@ import { Errors } from './types.js';
 import { validateWith, generateIdempotencyKey, withCorrelationId } from './utils.js';
 import type { SchedulingAdapter } from '../adapters/types.js';
 import type { PaymentAdapter, PaymentRegistry as CanonicalPaymentRegistry } from '../payments/types.js';
-import { createPaymentRegistry } from '../payments/types.js';
+import { createPaymentRegistry, toInternalPaymentMethodId, toPublicPaymentMethodId } from '../payments/types.js';
 import { z } from 'zod';
+import { parsePaymentRef } from './payment-ref.js';
+import type { PaymentReference } from './payment-ref.js';
 
 // =============================================================================
 // VALIDATION SCHEMAS
@@ -93,7 +95,10 @@ export const completeBookingWithAltPayment = (
   const { scheduler, payments, correlationId } = ctx;
   const { request, paymentMethod } = input;
 
-  const paymentAdapter = payments.get(paymentMethod);
+  // Public ids ('card') resolve to internally named adapters ('stripe').
+  // Unsupported selections fail with a typed error — never a manual fallback.
+  const paymentAdapter =
+    payments.get(paymentMethod) ?? payments.get(toInternalPaymentMethodId(paymentMethod));
   if (!paymentAdapter) {
     return Effect.fail(Errors.payment('INVALID_METHOD', `Unknown payment method: ${paymentMethod}`, paymentMethod, false));
   }
@@ -270,6 +275,25 @@ export interface CancellationResult {
 
 /**
  * Cancel booking with optional refund
+ *
+ * Refund semantics: when `refund: true` and the booking carries a
+ * `paymentRef`, the reference is resolved BEFORE any state is mutated:
+ *
+ * 1. The canonical codec decodes the `[PROCESSOR] Transaction: <id>` wire
+ *    format (what Acuity-backed bookings store).
+ * 2. If the string does not parse and the backend surfaced the processor as
+ *    a structured field (`booking.paymentMethod` — the homegrown adapter
+ *    stores the bare transaction id in `paymentRef` and the processor in its
+ *    own column), the refund is routed with
+ *    `{ processor: booking.paymentMethod, transactionId: booking.paymentRef }`.
+ *
+ * Only when neither resolves does the pipeline fail with a typed
+ * `ValidationError` (field `'paymentRef'`), leaving the booking uncancelled —
+ * previously this cancelled the booking and silently reported
+ * `refund.success: false`. Callers that want to cancel anyway can retry with
+ * `refund: false`. A reference that resolves to a processor with no
+ * registered adapter keeps the legacy soft behavior
+ * (`refund.success: false`), since the stored data itself is intact.
  */
 export const cancelBookingWithRefund = (
   ctx: PipelineContext,
@@ -279,27 +303,44 @@ export const cancelBookingWithRefund = (
 
   return Effect.gen(function* () {
     const booking = yield* scheduler.getBooking(input.bookingId);
+
+    // Resolve the payment reference up front so a refund we cannot honor
+    // refuses the operation before the booking is cancelled. Backends that
+    // store the reference structurally (homegrown) never wrote the wire
+    // format, so a failed parse falls back to their structured halves.
+    const storedRef = booking.paymentRef;
+    const structuredFallback: PaymentReference | undefined =
+      storedRef && booking.paymentMethod
+        ? { processor: booking.paymentMethod, transactionId: storedRef }
+        : undefined;
+
+    const paymentRef =
+      input.refund && storedRef
+        ? yield* pipe(
+            parsePaymentRef(storedRef),
+            Effect.catchAll((parseError) =>
+              structuredFallback ? Effect.succeed(structuredFallback) : Effect.fail(parseError)
+            )
+          )
+        : undefined;
+
     yield* scheduler.cancelBooking(input.bookingId, input.reason);
 
-    if (!input.refund || !booking.paymentRef) {
+    if (!paymentRef) {
       return { cancelled: true } satisfies CancellationResult;
     }
 
-    // Extract payment processor from notes
-    const processorMatch = booking.paymentRef?.match(/\[(\w+)\]/);
-    const processor = processorMatch?.[1]?.toLowerCase();
-    const paymentAdapter = processor ? payments.get(processor) : undefined;
+    // Public ids ('card') resolve to internally named adapters ('stripe'),
+    // mirroring completeBookingWithAltPayment's resolution order.
+    const paymentAdapter =
+      payments.get(paymentRef.processor) ??
+      payments.get(toInternalPaymentMethodId(paymentRef.processor));
 
     if (!paymentAdapter) {
       return { cancelled: true, refund: { success: false } } satisfies CancellationResult;
     }
 
-    const txMatch = booking.paymentRef?.match(/Transaction:\s*(\S+)/);
-    const transactionId = txMatch?.[1];
-
-    if (!transactionId) {
-      return { cancelled: true, refund: { success: false } } satisfies CancellationResult;
-    }
+    const transactionId = paymentRef.transactionId;
 
     const refundResult = yield* pipe(
       paymentAdapter.refund({ transactionId, reason: input.reason ?? 'Booking cancelled' }),
@@ -348,6 +389,16 @@ export const createSchedulingKit = (
   const payments = new Map<string, PaymentAdapter>();
   for (const a of registry.getAll()) {
     payments.set(a.name, a);
+  }
+  // Alias the canonical public id ('card' -> stripe adapter) so booking
+  // flows driven by public selections resolve the correct processor. Aliases
+  // only claim unclaimed ids: a literally named adapter always wins over an
+  // alias regardless of registration order, matching registry.get() precedence.
+  for (const a of registry.getAll()) {
+    const publicId = toPublicPaymentMethodId(a.name);
+    if (!payments.has(publicId)) {
+      payments.set(publicId, a);
+    }
   }
 
   return {

@@ -16,6 +16,7 @@ import type {
   ClientInfo,
 } from '../core/types.js';
 import { Errors } from '../core/types.js';
+import { formatPaymentRef } from '../core/payment-ref.js';
 import { fromPromise, withRetry, withTimeout } from '../core/utils.js';
 import type { SchedulingAdapter, AcuityAdapterConfig } from './types.js';
 
@@ -351,7 +352,11 @@ export const createAcuityAdapter = (config: AcuityAdapterConfig): SchedulingAdap
       ),
 
     createBookingWithPaymentRef: (request, paymentRef, paymentProcessor) => {
-      const paymentNote = `[${paymentProcessor.toUpperCase()}] Transaction: ${paymentRef}`;
+      // Canonical wire format — Acuity can only persist strings (notes field).
+      const paymentNote = formatPaymentRef({
+        processor: paymentProcessor,
+        transactionId: paymentRef,
+      });
       const combinedNotes = request.client.notes
         ? `${request.client.notes}\n\n${paymentNote}`
         : paymentNote;

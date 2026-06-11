@@ -33,13 +33,7 @@ export default defineConfig({
     },
     // Timeout for slower integration tests
     testTimeout: 10000,
-    // Pool configuration for parallel execution
     pool: 'threads',
-    poolOptions: {
-      threads: {
-        singleThread: false,
-      },
-    },
   },
   resolve: {
     conditions: ['browser'],

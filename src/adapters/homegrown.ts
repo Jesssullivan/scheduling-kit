@@ -2,7 +2,7 @@
  * Homegrown Scheduling Adapter
  *
  * Direct PG-backed scheduling — replaces Acuity browser automation.
- * Implements the full SchedulingAdapter interface (16 methods) using
+ * Implements the full SchedulingAdapter interface (17 methods) using
  * Drizzle ORM queries against Neon PostgreSQL.
  *
  * Feature-flagged: only active when SCHEDULING_BACKEND=homegrown
@@ -499,6 +499,7 @@ export const createHomegrownAdapter = (
       confirmationCode: row.confirmationCode,
       paymentStatus: row.paymentStatus as PaymentStatus,
       paymentRef: row.paymentRef ?? undefined,
+      paymentMethod: row.paymentMethod ?? undefined,
       createdAt: row.createdAt,
     } satisfies Booking;
   };
@@ -898,6 +899,7 @@ export const createHomegrownAdapter = (
           status: row.status as BookingStatus,
           confirmationCode: row.confirmationCode,
           paymentStatus: row.paymentStatus as PaymentStatus,
+          paymentMethod: row.paymentMethod ?? undefined,
           createdAt: row.createdAt,
         } satisfies Booking;
       }),
@@ -926,6 +928,7 @@ export const createHomegrownAdapter = (
           return {
             ...booking,
             paymentRef,
+            paymentMethod: paymentProcessor,
             paymentStatus: "paid" as const,
           };
         }),
