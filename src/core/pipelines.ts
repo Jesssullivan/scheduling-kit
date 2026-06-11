@@ -20,6 +20,7 @@ import type { SchedulingAdapter } from '../adapters/types.js';
 import type { PaymentAdapter, PaymentRegistry as CanonicalPaymentRegistry } from '../payments/types.js';
 import { createPaymentRegistry } from '../payments/types.js';
 import { z } from 'zod';
+import { parsePaymentRef } from './payment-ref.js';
 
 // =============================================================================
 // VALIDATION SCHEMAS
@@ -270,6 +271,16 @@ export interface CancellationResult {
 
 /**
  * Cancel booking with optional refund
+ *
+ * Refund semantics: when `refund: true` and the booking carries a
+ * `paymentRef`, the reference is decoded with the canonical codec BEFORE any
+ * state is mutated. An unparseable reference fails the whole pipeline with a
+ * typed `ValidationError` (field `'paymentRef'`) and the booking is left
+ * uncancelled — previously this cancelled the booking and silently reported
+ * `refund.success: false`. Callers that want to cancel anyway can retry with
+ * `refund: false`. A reference that parses to a processor with no registered
+ * adapter keeps the legacy soft behavior (`refund.success: false`), since the
+ * stored data itself is intact.
  */
 export const cancelBookingWithRefund = (
   ctx: PipelineContext,
@@ -279,27 +290,26 @@ export const cancelBookingWithRefund = (
 
   return Effect.gen(function* () {
     const booking = yield* scheduler.getBooking(input.bookingId);
+
+    // Decode the payment reference up front so a refund we cannot honor
+    // refuses the operation before the booking is cancelled.
+    const paymentRef =
+      input.refund && booking.paymentRef ? yield* parsePaymentRef(booking.paymentRef) : undefined;
+
     yield* scheduler.cancelBooking(input.bookingId, input.reason);
 
-    if (!input.refund || !booking.paymentRef) {
+    if (!paymentRef) {
       return { cancelled: true } satisfies CancellationResult;
     }
 
-    // Extract payment processor from notes
-    const processorMatch = booking.paymentRef?.match(/\[(\w+)\]/);
-    const processor = processorMatch?.[1]?.toLowerCase();
+    const processor = paymentRef.processor;
     const paymentAdapter = processor ? payments.get(processor) : undefined;
 
     if (!paymentAdapter) {
       return { cancelled: true, refund: { success: false } } satisfies CancellationResult;
     }
 
-    const txMatch = booking.paymentRef?.match(/Transaction:\s*(\S+)/);
-    const transactionId = txMatch?.[1];
-
-    if (!transactionId) {
-      return { cancelled: true, refund: { success: false } } satisfies CancellationResult;
-    }
+    const transactionId = paymentRef.transactionId;
 
     const refundResult = yield* pipe(
       paymentAdapter.refund({ transactionId, reason: input.reason ?? 'Booking cancelled' }),

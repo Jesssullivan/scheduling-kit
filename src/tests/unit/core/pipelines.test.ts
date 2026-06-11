@@ -15,6 +15,7 @@ import {
   type BookingPipelineInput,
 } from '../../../core/pipelines.js';
 import { Errors } from '../../../core/types.js';
+import { formatPaymentRef } from '../../../core/payment-ref.js';
 import type { SchedulingAdapter } from '../../../adapters/types.js';
 import type { PaymentAdapter, PaymentWebhookEvent } from '../../../payments/types.js';
 import {
@@ -67,7 +68,7 @@ const createMockScheduler = (): SchedulingAdapter => ({
   // Bookings
   createBooking: vi.fn(() => Effect.succeed(createBooking())),
   createBookingWithPaymentRef: vi.fn((_, ref, processor) =>
-    Effect.succeed(createBooking({ paymentRef: `[${processor.toUpperCase()}] Transaction: ${ref}` }))
+    Effect.succeed(createBooking({ paymentRef: formatPaymentRef({ processor, transactionId: ref }) }))
   ),
   getBooking: vi.fn(() => Effect.succeed(createBooking())),
   cancelBooking: vi.fn(() => Effect.succeed(undefined)),
@@ -421,7 +422,10 @@ describe('cancelBookingWithRefund', () => {
     expect(result.refund?.success).toBe(false);
   });
 
-  it('returns success with failed refund when transaction ID not found', async () => {
+  it('fails with typed ValidationError and does not cancel when payment ref is unparseable', async () => {
+    // Legacy behavior: cancelled the booking and silently reported
+    // refund.success: false. New behavior: a refund that cannot be honored
+    // refuses the whole operation before any state is mutated.
     vi.mocked(scheduler.getBooking).mockReturnValue(
       Effect.succeed(
         createBooking({
@@ -430,15 +434,78 @@ describe('cancelBookingWithRefund', () => {
       )
     );
 
-    const result = await expectSuccess(
+    const error = await expectFailureTag(
       cancelBookingWithRefund(ctx, {
         bookingId: '100001',
         refund: true,
-      })
+      }),
+      'ValidationError'
+    );
+
+    expect(error._tag === 'ValidationError' && error.field).toBe('paymentRef');
+    expect(scheduler.cancelBooking).not.toHaveBeenCalled();
+    expect(paymentAdapter.refund).not.toHaveBeenCalled();
+  });
+
+  it('fails with typed ValidationError for a raw (unformatted) payment ref', async () => {
+    vi.mocked(scheduler.getBooking).mockReturnValue(
+      Effect.succeed(
+        createBooking({
+          paymentRef: 'pi_3MtwBwLkdIwHu7ix28a3tqPa',
+        })
+      )
+    );
+
+    const error = await expectFailureTag(
+      cancelBookingWithRefund(ctx, { bookingId: '100001', refund: true }),
+      'ValidationError'
+    );
+
+    expect(error._tag === 'ValidationError' && error.value).toBe('pi_3MtwBwLkdIwHu7ix28a3tqPa');
+    expect(scheduler.cancelBooking).not.toHaveBeenCalled();
+  });
+
+  it('still cancels a booking with an unparseable ref when no refund is requested', async () => {
+    vi.mocked(scheduler.getBooking).mockReturnValue(
+      Effect.succeed(
+        createBooking({
+          paymentRef: 'not a wire-format ref',
+        })
+      )
+    );
+
+    const result = await expectSuccess(
+      cancelBookingWithRefund(ctx, { bookingId: '100001', refund: false })
     );
 
     expect(result.cancelled).toBe(true);
-    expect(result.refund?.success).toBe(false);
+    expect(result.refund).toBeUndefined();
+    expect(scheduler.cancelBooking).toHaveBeenCalledWith('100001', undefined);
+  });
+
+  it('refunds using the canonical marker when the ref is embedded in note text', async () => {
+    // Acuity stores the payment marker inside the appointment notes field,
+    // surrounded by client notes and refund annotations. The stray [VIP]
+    // token would have been mis-parsed as the processor by the legacy regex;
+    // the codec prefers the intact canonical marker.
+    vi.mocked(scheduler.getBooking).mockReturnValue(
+      Effect.succeed(
+        createBooking({
+          paymentRef:
+            'Client prefers afternoons [VIP]\n\n[CASH] Transaction: cash_77777 [REFUND] refund_77777',
+        })
+      )
+    );
+
+    const result = await expectSuccess(
+      cancelBookingWithRefund(ctx, { bookingId: '100001', refund: true })
+    );
+
+    expect(result.cancelled).toBe(true);
+    expect(result.refund?.success).toBe(true);
+    expect(paymentAdapter.refund).toHaveBeenCalledWith(
+      expect.objectContaining({ transactionId: 'cash_77777' })
+    );
   });
 
   it('propagates booking not found error', async () => {
