@@ -18,6 +18,9 @@
  * - the adopting application owns the row tables — its site names, lane
  *   names, and dynamic-host policy
  *
+ * For payment-method capabilities (`PaymentCapabilities` /
+ * `extractCapabilities`), see `@tummycrypt/scheduling-kit/payments` instead.
+ *
  * @example
  * ```typescript
  * import {

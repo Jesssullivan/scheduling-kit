@@ -9,6 +9,7 @@ Subpackage structure:
   //src/core         - SchedulingAdapter interface, types, Effect wrappers
   //src/adapters     - HomegrownAdapter (PostgreSQL/Drizzle)
   //src/payments     - Stripe, Venmo/PayPal, manual payment adapters
+  //src/onboarding   - Payment provider onboarding (credentials, OAuth, webhooks)
   //src/capabilities - Scheduling runtime capability contract + resolver
   //src/components   - 12 Svelte checkout UI components
   //src/stores       - Svelte stores (checkout state)

@@ -3,7 +3,8 @@
  *
  * This is the canonical extraction logic used by downstream booking surfaces
  * to produce consistent payment method availability. `scheduling-bridge`
- * delegates to this implementation; do not fork the semantics downstream.
+ * will delegate to this implementation once it adopts the next kit release
+ * (Refs: scheduling-bridge#82); do not fork the semantics downstream.
  *
  * Inputs are intentionally generic: a flat string map of practitioner-level
  * settings (typically loaded from a database) and a flat string map of
@@ -21,6 +22,9 @@ import type {
  * Practitioner-scoped settings, e.g. rows from a settings table keyed by
  * setting name. Recognized keys: `stripe_publishable_key`,
  * `stripe_connect_account_id`, `paypal_payee_email`.
+ *
+ * Empty-string values are treated as absent: a setting explicitly cleared to
+ * `''` falls through to the platform env var (and then to disabled).
  */
 export type PractitionerPaymentSettings = Record<string, string>;
 
@@ -28,6 +32,8 @@ export type PractitionerPaymentSettings = Record<string, string>;
  * Platform-scoped environment variables. Recognized keys:
  * `PUBLIC_STRIPE_PUBLISHABLE_KEY`, `STRIPE_CONNECT_ACCOUNT_ID`,
  * `PUBLIC_PAYPAL_CLIENT_ID`, `PAYPAL_PAYEE_EMAIL`, `PAYPAL_ENVIRONMENT`.
+ *
+ * Empty-string values are treated as absent, the same as unset variables.
  */
 export type PlatformPaymentEnv = Record<string, string>;
 
