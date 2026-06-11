@@ -353,9 +353,16 @@ export const createSchedulingKit = (
   const payments = new Map<string, PaymentAdapter>();
   for (const a of registry.getAll()) {
     payments.set(a.name, a);
-    // Alias the canonical public id ('card' -> stripe adapter) so booking
-    // flows driven by public selections resolve the correct processor.
-    payments.set(toPublicPaymentMethodId(a.name), a);
+  }
+  // Alias the canonical public id ('card' -> stripe adapter) so booking
+  // flows driven by public selections resolve the correct processor. Aliases
+  // only claim unclaimed ids: a literally named adapter always wins over an
+  // alias regardless of registration order, matching registry.get() precedence.
+  for (const a of registry.getAll()) {
+    const publicId = toPublicPaymentMethodId(a.name);
+    if (!payments.has(publicId)) {
+      payments.set(publicId, a);
+    }
   }
 
   return {

@@ -186,6 +186,15 @@ export const MANUAL_PAYMENT_METHOD_IDS = [
 
 export type ManualPaymentMethodId = (typeof MANUAL_PAYMENT_METHOD_IDS)[number];
 
+/**
+ * Default adapter name shipped by `createManualPaymentAdapter`.
+ *
+ * Kept separate from `MANUAL_PAYMENT_METHOD_IDS` because that list types
+ * `ManualPaymentConfig.methods` values, while 'manual' is an adapter name —
+ * but both must be routable as manual completions on checkout surfaces.
+ */
+export const DEFAULT_MANUAL_ADAPTER_NAME = 'manual';
+
 /** Map an internal adapter name to the canonical public payment method id. */
 export const toPublicPaymentMethodId = (paymentMethodId: string): string =>
   paymentMethodId === INTERNAL_STRIPE_PAYMENT_METHOD_ID
@@ -203,8 +212,12 @@ export const isCardPaymentMethodId = (paymentMethodId: string): boolean =>
   paymentMethodId === PUBLIC_CARD_PAYMENT_METHOD_ID ||
   paymentMethodId === INTERNAL_STRIPE_PAYMENT_METHOD_ID;
 
-/** True only for explicit manual methods; unknown ids are NOT manual. */
+/**
+ * True only for explicit manual methods (including the kit's own default
+ * manual adapter name); unknown ids are NOT manual.
+ */
 export const isManualPaymentMethodId = (paymentMethodId: string): boolean =>
+  paymentMethodId === DEFAULT_MANUAL_ADAPTER_NAME ||
   (MANUAL_PAYMENT_METHOD_IDS as readonly string[]).includes(paymentMethodId);
 
 // =============================================================================
@@ -301,11 +314,21 @@ export const toPublicPaymentMethodOption = (adapter: PaymentAdapter): PaymentMet
   const config = adapter.getClientConfig();
   const publicId = toPublicPaymentMethodId(adapter.name);
 
+  // Icon tokens are a separate domain from method ids — do not reuse the id
+  // normalizer here. Only the stripe adapter's own legacy 'stripe' icon token
+  // is rewritten to the public 'card' token; emoji, URLs, and custom tokens
+  // (even one literally named 'stripe' on another adapter) pass through.
+  const icon =
+    adapter.name === INTERNAL_STRIPE_PAYMENT_METHOD_ID &&
+    config.icon === INTERNAL_STRIPE_PAYMENT_METHOD_ID
+      ? PUBLIC_CARD_PAYMENT_METHOD_ID
+      : config.icon;
+
   return {
     id: publicId,
     name: publicId,
     displayName: config.displayName,
-    icon: config.icon ? toPublicPaymentMethodId(config.icon) : undefined,
+    icon,
     available: true,
   };
 };
@@ -324,20 +347,26 @@ export const createPaymentRegistry = (): PaymentRegistry => {
     getAll: () => Array.from(adapters.values()),
 
     getAvailableMethods: async () => {
-      const methods: PaymentMethodOption[] = [];
+      // Keyed by public id so two adapters can never emit duplicate ids
+      // (e.g. a literal 'card' adapter alongside 'stripe'). A literally
+      // named adapter wins over an aliased one, matching get() precedence.
+      const methodsById = new Map<string, PaymentMethodOption>();
 
       for (const adapter of adapters.values()) {
         try {
           const available = await Effect.runPromise(adapter.isAvailable());
-          if (available) {
-            methods.push(toPublicPaymentMethodOption(adapter));
+          if (!available) continue;
+
+          const option = toPublicPaymentMethodOption(adapter);
+          if (!methodsById.has(option.id) || adapter.name === option.id) {
+            methodsById.set(option.id, option);
           }
         } catch {
           // Adapter unavailable — skip
         }
       }
 
-      return methods;
+      return Array.from(methodsById.values());
     },
   };
 };
