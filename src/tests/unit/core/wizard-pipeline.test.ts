@@ -16,6 +16,7 @@ import {
   type SchedulingKit,
 } from '../../../core/pipelines.js';
 import { Errors } from '../../../core/types.js';
+import { formatPaymentRef } from '../../../core/payment-ref.js';
 import type { SchedulingAdapter } from '../../../adapters/types.js';
 import type { PaymentAdapter } from '../../../payments/types.js';
 import {
@@ -106,7 +107,7 @@ const createMockWizardAdapter = (overrides?: Partial<SchedulingAdapter>): Schedu
       client: request.client,
       status: 'confirmed',
       paymentStatus: 'paid',
-      paymentRef: `[${processor.toUpperCase()}] Transaction: ${paymentRef}`,
+      paymentRef: formatPaymentRef({ processor, transactionId: paymentRef }),
     }))
   ),
   getBooking: vi.fn(() =>
