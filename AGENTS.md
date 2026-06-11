@@ -53,6 +53,12 @@ Active threads:
 - runner reachability and shared-runner proof before treating package CI as a
   stable public workflow contract
 
+Closed but still relevant context:
+
+- `TIN-101` completed the mini sprint for toolchain authority and hermetic package convergence
+- `TIN-103` closed the release-authority ambiguity for `Jesssullivan/scheduling-kit`
+- `TIN-104` was canceled as a duplicate during that convergence work
+
 Current operational truth:
 
 - local development should default to `jesssullivan/main`
@@ -81,6 +87,10 @@ There are **two** build surfaces in this repo:
 2. Bazel defines and builds the publishable package artifact used by CI
 
 Do not confuse them.
+
+The repo flake and `.envrc` exist to make those surfaces reproducibly available
+from a fresh machine. They are bootstrap tools, not a second packaging
+authority.
 
 ### Canonical publish path
 

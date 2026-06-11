@@ -79,6 +79,7 @@ nix build .#docs        # Build the static docs site as a derivation
 nix flake check         # Evaluate flake outputs and run lightweight checks
 ```
 
+
 ## Release Authority
 
 Current reality:
@@ -375,12 +376,13 @@ import { CassetteRecorder, CassettePlayer } from '@tummycrypt/scheduling-kit/tes
 ## Development
 
 ```bash
-pnpm install
-pnpm dev              # Start dev server
-pnpm build            # Build package
-pnpm check            # TypeScript check
-pnpm lint             # ESLint
-pnpm test:all         # Run all test suites
+pnpm dev                 # Start dev server
+pnpm build               # Build package
+pnpm check               # TypeScript check
+pnpm lint                # ESLint
+pnpm test:all            # Run all test suites
+pnpm docs:check          # Validate generated docs and MkDocs config
+bazel build //:pkg       # Build npm artifact through Bazel
 ```
 
 ## License
