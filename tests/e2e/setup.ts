@@ -101,8 +101,8 @@ export const createMockServices = () => [
 export const createMockProviders = () => [
   {
     id: 'provider-1',
-    name: 'Jennifer Sullivan',
-    email: 'jen@massageithaca.com',
+    name: 'Alex Rivera',
+    email: 'alex@example.com',
     color: '#4A90A4',
   },
 ];

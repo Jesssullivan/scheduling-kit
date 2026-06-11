@@ -61,7 +61,7 @@ describe('Provider status', () => {
 	});
 
 	it('paypal: connected when platform + email', () => {
-		expect(getPayPalStatus({ platformConfigured: true, payeeEmail: 'jen@example.com' })).toBe('connected');
+		expect(getPayPalStatus({ platformConfigured: true, payeeEmail: 'owner@example.com' })).toBe('connected');
 	});
 });
 

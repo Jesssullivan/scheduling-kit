@@ -6,7 +6,7 @@
 import type { Service } from '../../core/types.js';
 
 // =============================================================================
-// MASSAGE ITHACA SERVICES (Production-like)
+// EXAMPLE STUDIO SERVICES (Production-like)
 // =============================================================================
 
 /**
