@@ -5,6 +5,14 @@
 // Types
 export * from './types.js';
 
+// Payment reference codec
+export {
+  formatPaymentRef,
+  parsePaymentRef,
+  type PaymentProcessor,
+  type PaymentReference,
+} from './payment-ref.js';
+
 // Utilities
 export {
   fromPromise,
