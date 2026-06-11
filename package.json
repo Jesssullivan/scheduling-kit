@@ -31,6 +31,10 @@
       "types": "./dist/capabilities/index.d.ts",
       "default": "./dist/capabilities/index.js"
     },
+    "./recurrence": {
+      "types": "./dist/adapters/recurrence.d.ts",
+      "default": "./dist/adapters/recurrence.js"
+    },
     "./core": {
       "types": "./dist/core/index.d.ts",
       "default": "./dist/core/index.js"
@@ -92,12 +96,16 @@
   },
   "peerDependencies": {
     "@tummycrypt/tinyland-auth-pg": "^0.2.1",
+    "@tummycrypt/tinyland-calendar": "^0.2.3",
     "@skeletonlabs/skeleton": "^4.0.0",
     "@skeletonlabs/skeleton-svelte": "^4.0.0",
     "svelte": "^5.0.0"
   },
   "peerDependenciesMeta": {
     "@tummycrypt/tinyland-auth-pg": {
+      "optional": true
+    },
+    "@tummycrypt/tinyland-calendar": {
       "optional": true
     },
     "@skeletonlabs/skeleton": {
@@ -120,6 +128,7 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/svelte": "^5.3.1",
     "@tummycrypt/tinyland-auth-pg": "^0.2.4",
+    "@tummycrypt/tinyland-calendar": "^0.2.3",
     "@types/node": "^20.0.0",
     "@typescript-eslint/parser": "^8.58.2",
     "@vitest/coverage-v8": "^4.0.0",
