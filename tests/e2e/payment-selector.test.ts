@@ -24,12 +24,13 @@ const createMockPaymentMethods = () => [
     icon: 'cash',
   },
   {
-    id: 'stripe',
-    displayName: 'Credit Card',
+    // Canonical public card id — internal 'stripe' must not leak here
+    id: 'card',
+    displayName: 'Credit/Debit Card',
     description: 'Pay with card',
     available: true,
     processingFeePercent: 2.9,
-    icon: 'stripe',
+    icon: 'card',
   },
   {
     id: 'disabled',
@@ -57,7 +58,20 @@ describe('PaymentSelector Component', () => {
 
     expect(screen.getByText('Venmo')).toBeInTheDocument();
     expect(screen.getByText('Cash')).toBeInTheDocument();
-    expect(screen.getByText('Credit Card')).toBeInTheDocument();
+    expect(screen.getByText('Credit/Debit Card')).toBeInTheDocument();
+  });
+
+  it('reports the canonical card id when the card method is selected', async () => {
+    const onSelect = vi.fn();
+    render(PaymentSelector, {
+      props: { methods: createMockPaymentMethods(), amount: 10000, onSelect },
+    });
+
+    const cardButton = screen.getByText('Credit/Debit Card').closest('button');
+    await fireEvent.click(cardButton!);
+
+    expect(onSelect).toHaveBeenCalledWith('card');
+    expect(onSelect).not.toHaveBeenCalledWith('stripe');
   });
 
   it('shows loading state', () => {
