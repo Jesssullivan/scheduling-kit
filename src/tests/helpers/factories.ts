@@ -138,7 +138,7 @@ export const serviceArb: fc.Arbitrary<Service> = fc.record({
  */
 export const providerArb: fc.Arbitrary<Provider> = fc.record({
   id: idArb,
-  name: fc.constantFrom('Jen Sullivan', 'Jennifer Sullivan', 'Dr. Smith'),
+  name: fc.constantFrom('Alex Rivera', 'Alexandra Rivera', 'Dr. Smith'),
   email: fc.option(emailArb, { nil: undefined }),
   description: fc.option(fc.lorem({ maxCount: 5 }), { nil: undefined }),
   image: fc.option(fc.webUrl(), { nil: undefined }),
@@ -217,7 +217,7 @@ export const bookingArb: fc.Arbitrary<Booking> = fc
     serviceId: service.id,
     serviceName: service.name,
     providerId,
-    providerName: 'Jen Sullivan',
+    providerName: 'Alex Rivera',
     datetime,
     endTime: addMinutesToIso(datetime, service.duration),
     duration: service.duration,
@@ -322,8 +322,8 @@ export const createService = (overrides?: Partial<Service>): Service => ({
  */
 export const createProvider = (overrides?: Partial<Provider>): Provider => ({
   id: '67890',
-  name: 'Jen Sullivan',
-  email: 'jen@massageithaca.com',
+  name: 'Alex Rivera',
+  email: 'alex@example.com',
   description: 'Licensed massage therapist',
   timezone: 'America/New_York',
   ...overrides,
@@ -361,7 +361,7 @@ export const createBooking = (overrides?: Partial<Booking>): Booking => ({
   serviceId: '12345',
   serviceName: 'TMD 60min (including intraoral)',
   providerId: '67890',
-  providerName: 'Jen Sullivan',
+  providerName: 'Alex Rivera',
   datetime: '2026-02-15T19:00:00.000Z',
   endTime: '2026-02-15T20:00:00.000Z',
   duration: 60,

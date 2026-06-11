@@ -375,18 +375,23 @@ describe('getDatesWithAvailability', () => {
 // ---------------------------------------------------------------------------
 
 describe('generateConfirmationCode', () => {
-  it('starts with MI- prefix', () => {
+  it('starts with the neutral BK- prefix by default', () => {
     const code = generateConfirmationCode();
-    expect(code).toMatch(/^MI-/);
+    expect(code).toMatch(/^BK-/);
   });
 
-  it('has correct length (MI- + 6 chars = 9)', () => {
+  it('uses a custom prefix when provided', () => {
+    const code = generateConfirmationCode('MI');
+    expect(code).toMatch(/^MI-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/);
+  });
+
+  it('has correct length (BK- + 6 chars = 9)', () => {
     expect(generateConfirmationCode().length).toBe(9);
   });
 
   it('uses only allowed characters', () => {
     for (let i = 0; i < 100; i++) {
-      const code = generateConfirmationCode().slice(3); // Remove MI-
+      const code = generateConfirmationCode().slice(3); // Remove BK-
       expect(code).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/);
     }
   });

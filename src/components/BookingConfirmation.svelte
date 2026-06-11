@@ -5,17 +5,18 @@
    */
   import type { Booking, PaymentResult } from '../core/types.js';
 
-  // Props
+  // Props — business identity is intentionally unbranded: blocks that depend
+  // on these props are only rendered when the consumer provides them.
   let {
     booking,
     payment,
     onNewBooking,
     onClose,
-    businessName = 'Massage Ithaca',
-    businessAddress = '950 Danby Rd (Route 96B), South Hill Business Campus, Ithaca, NY 14850',
-    businessDomain = 'massageithaca.com',
-    businessShortAddress = '950 Danby Rd, Ithaca, NY 14850',
-    mapsUrl = 'https://maps.app.goo.gl/k7aYDcXFfmECfXtT9',
+    businessName,
+    businessAddress,
+    businessDomain,
+    businessShortAddress,
+    mapsUrl,
   }: {
     booking: Booking;
     payment?: PaymentResult;
@@ -62,6 +63,12 @@
     }).format(cents / 100);
   };
 
+  // Appointment description used in calendar entries
+  const appointmentDescription = (separator: string): string => {
+    const at = businessName ? ` at ${businessName}` : '';
+    return `Appointment${at}${separator}Confirmation #${booking.confirmationCode}`;
+  };
+
   // Generate Google Calendar link
   const getGoogleCalendarLink = (): string => {
     const start = new Date(booking.datetime);
@@ -75,9 +82,11 @@
       action: 'TEMPLATE',
       text: booking.serviceName,
       dates: `${formatForGoogle(start)}/${formatForGoogle(end)}`,
-      details: `Appointment at ${businessName}\n\nConfirmation #${booking.confirmationCode}`,
-      location: businessShortAddress,
+      details: appointmentDescription('\n\n'),
     });
+    if (businessShortAddress) {
+      params.set('location', businessShortAddress);
+    }
 
     return `https://calendar.google.com/calendar/render?${params}`;
   };
@@ -91,19 +100,23 @@
       return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
     };
 
-    return `BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//${businessName}//Booking//EN
-BEGIN:VEVENT
-UID:${booking.id}@${businessDomain}
-DTSTAMP:${formatForIcs(new Date())}
-DTSTART:${formatForIcs(start)}
-DTEND:${formatForIcs(end)}
-SUMMARY:${booking.serviceName}
-DESCRIPTION:Appointment at ${businessName}\\n\\nConfirmation #${booking.confirmationCode}
-LOCATION:${businessShortAddress}
-END:VEVENT
-END:VCALENDAR`;
+    const lines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      `PRODID:-//${businessName ?? 'scheduling-kit'}//Booking//EN`,
+      'BEGIN:VEVENT',
+      `UID:${booking.id}@${businessDomain ?? 'scheduling-kit.invalid'}`,
+      `DTSTAMP:${formatForIcs(new Date())}`,
+      `DTSTART:${formatForIcs(start)}`,
+      `DTEND:${formatForIcs(end)}`,
+      `SUMMARY:${booking.serviceName}`,
+      `DESCRIPTION:${appointmentDescription('\\n\\n')}`,
+    ];
+    if (businessShortAddress) {
+      lines.push(`LOCATION:${businessShortAddress}`);
+    }
+    lines.push('END:VEVENT', 'END:VCALENDAR');
+    return lines.join('\n');
   };
 
   // Download ICS file
@@ -113,7 +126,8 @@ END:VCALENDAR`;
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${businessName.toLowerCase().replace(/\s+/g, '-')}-${booking.confirmationCode}.ics`;
+    const filePrefix = (businessName ?? 'booking').toLowerCase().replace(/\s+/g, '-');
+    link.download = `${filePrefix}-${booking.confirmationCode}.ics`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -196,21 +210,27 @@ END:VCALENDAR`;
     </div>
   </div>
 
-  <!-- Location -->
-  <div class="location text-left bg-surface-50-950 rounded-container p-6 mb-6">
-    <h3 class="font-semibold text-lg mb-2 text-surface-900-100">Location</h3>
-    <p class="text-surface-600-400">
-      {businessAddress}
-    </p>
-    <a
-      href={mapsUrl}
-      target="_blank"
-      rel="noopener noreferrer"
-      class="inline-block mt-3 text-primary-600-400 hover:text-primary-700-300"
-    >
-      Get Directions →
-    </a>
-  </div>
+  <!-- Location (only when the consumer provides business location props) -->
+  {#if businessAddress || mapsUrl}
+    <div class="location text-left bg-surface-50-950 rounded-container p-6 mb-6">
+      <h3 class="font-semibold text-lg mb-2 text-surface-900-100">Location</h3>
+      {#if businessAddress}
+        <p class="text-surface-600-400">
+          {businessAddress}
+        </p>
+      {/if}
+      {#if mapsUrl}
+        <a
+          href={mapsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-block mt-3 text-primary-600-400 hover:text-primary-700-300"
+        >
+          Get Directions →
+        </a>
+      {/if}
+    </div>
+  {/if}
 
   <!-- Add to Calendar -->
   <div class="calendar-actions flex flex-col sm:flex-row gap-3 mb-6">

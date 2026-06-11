@@ -6,19 +6,19 @@
 import type { Provider } from '../../core/types.js';
 
 // =============================================================================
-// MASSAGE ITHACA PROVIDERS (Production-like)
+// EXAMPLE STUDIO PROVIDERS (Production-like)
 // =============================================================================
 
 /**
- * Primary provider - Jen Sullivan
+ * Primary provider - Alex Rivera
  */
-export const jenProvider: Provider = {
+export const primaryProvider: Provider = {
   id: '67890',
-  name: 'Jen Sullivan',
-  email: 'jen@massageithaca.com',
+  name: 'Alex Rivera',
+  email: 'alex@example.com',
   description:
     'Licensed massage therapist specializing in TMD/TMJ treatment and therapeutic massage.',
-  image: 'https://massageithaca.com/images/jen-sullivan.jpg',
+  image: 'https://example.com/images/alex-rivera.jpg',
   timezone: 'America/New_York',
 };
 
@@ -28,7 +28,7 @@ export const jenProvider: Provider = {
 export const guestProvider: Provider = {
   id: '67891',
   name: 'Guest Therapist',
-  email: 'guest@massageithaca.com',
+  email: 'guest@example.com',
   description: 'Guest therapist available for overflow appointments.',
   timezone: 'America/New_York',
 };
@@ -36,7 +36,7 @@ export const guestProvider: Provider = {
 /**
  * All providers
  */
-export const allProviders: Provider[] = [jenProvider, guestProvider];
+export const allProviders: Provider[] = [primaryProvider, guestProvider];
 
 // =============================================================================
 // EDGE CASE FIXTURES
@@ -104,17 +104,17 @@ export const unicodeProvider: Provider = {
 export const acuityCalendarsRaw = [
   {
     id: 67890,
-    name: 'Jen Sullivan',
-    email: 'jen@massageithaca.com',
+    name: 'Alex Rivera',
+    email: 'alex@example.com',
     description:
       'Licensed massage therapist specializing in TMD/TMJ treatment and therapeutic massage.',
-    image: 'https://massageithaca.com/images/jen-sullivan.jpg',
+    image: 'https://example.com/images/alex-rivera.jpg',
     timezone: 'America/New_York',
   },
   {
     id: 67891,
     name: 'Guest Therapist',
-    email: 'guest@massageithaca.com',
+    email: 'guest@example.com',
     description: 'Guest therapist available for overflow appointments.',
     image: '',
     timezone: 'America/New_York',

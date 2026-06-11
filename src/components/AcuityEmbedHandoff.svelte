@@ -21,10 +21,10 @@
     onError,
     onHeightChange,
     debug = false,
-    supportPhone = '+16072014926',
-    supportEmail = 'jen@massageithaca.com',
+    supportPhone,
+    supportEmail,
   }: {
-    /** Acuity base URL (e.g., https://MassageIthaca.as.me) */
+    /** Acuity base URL (e.g., https://YourBusiness.as.me) */
     baseUrl: string;
     /** Client pre-fill information */
     client?: ClientInfo;
@@ -135,11 +135,21 @@
     ></iframe>
   </div>
 
-  <!-- Help text -->
-  <p class="help-text text-xs text-surface-600-400 text-center mt-4">
-    Having trouble? <a href="tel:{supportPhone}" class="text-primary-600-400 underline">Call us</a> or
-    <a href="mailto:{supportEmail}" class="text-primary-600-400 underline">send an email</a>.
-  </p>
+  <!-- Help text (only when the consumer provides support contact props) -->
+  {#if supportPhone && supportEmail}
+    <p class="help-text text-xs text-surface-600-400 text-center mt-4">
+      Having trouble? <a href="tel:{supportPhone}" class="text-primary-600-400 underline">Call us</a> or
+      <a href="mailto:{supportEmail}" class="text-primary-600-400 underline">send an email</a>.
+    </p>
+  {:else if supportPhone}
+    <p class="help-text text-xs text-surface-600-400 text-center mt-4">
+      Having trouble? <a href="tel:{supportPhone}" class="text-primary-600-400 underline">Call us</a>.
+    </p>
+  {:else if supportEmail}
+    <p class="help-text text-xs text-surface-600-400 text-center mt-4">
+      Having trouble? <a href="mailto:{supportEmail}" class="text-primary-600-400 underline">Send an email</a>.
+    </p>
+  {/if}
 </div>
 
 <style>

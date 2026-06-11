@@ -13,7 +13,7 @@
     "classSize": 1,
     "paddingBefore": 0,
     "paddingAfter": 15,
-    "schedulingUrl": "https://massageithaca.acuityscheduling.com/schedule.php?appointmentType=12345"
+    "schedulingUrl": "https://examplestudio.acuityscheduling.com/schedule.php?appointmentType=12345"
   },
   {
     "id": 12346,
@@ -29,7 +29,7 @@
     "classSize": 1,
     "paddingBefore": 0,
     "paddingAfter": 10,
-    "schedulingUrl": "https://massageithaca.acuityscheduling.com/schedule.php?appointmentType=12346"
+    "schedulingUrl": "https://examplestudio.acuityscheduling.com/schedule.php?appointmentType=12346"
   },
   {
     "id": 12347,
@@ -45,7 +45,7 @@
     "classSize": 1,
     "paddingBefore": 0,
     "paddingAfter": 15,
-    "schedulingUrl": "https://massageithaca.acuityscheduling.com/schedule.php?appointmentType=12347"
+    "schedulingUrl": "https://examplestudio.acuityscheduling.com/schedule.php?appointmentType=12347"
   },
   {
     "id": 12348,
@@ -61,7 +61,7 @@
     "classSize": 1,
     "paddingBefore": 0,
     "paddingAfter": 15,
-    "schedulingUrl": "https://massageithaca.acuityscheduling.com/schedule.php?appointmentType=12348"
+    "schedulingUrl": "https://examplestudio.acuityscheduling.com/schedule.php?appointmentType=12348"
   },
   {
     "id": 12349,
@@ -77,6 +77,6 @@
     "classSize": 1,
     "paddingBefore": 0,
     "paddingAfter": 10,
-    "schedulingUrl": "https://massageithaca.acuityscheduling.com/schedule.php?appointmentType=12349"
+    "schedulingUrl": "https://examplestudio.acuityscheduling.com/schedule.php?appointmentType=12349"
   }
 ]

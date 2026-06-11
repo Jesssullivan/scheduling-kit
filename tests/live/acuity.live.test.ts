@@ -1,6 +1,6 @@
 /**
  * Acuity Live API Tests
- * Tests against the real MassageIthaca Acuity instance
+ * Tests against a real Acuity instance (credentials via environment)
  *
  * IMPORTANT: Acuity API requires the Powerhouse plan ($50/mo) for ANY API access.
  * Without Powerhouse, all endpoints return 403 Forbidden.

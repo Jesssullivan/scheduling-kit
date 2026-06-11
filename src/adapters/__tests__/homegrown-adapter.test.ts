@@ -43,6 +43,7 @@ const mockBookingsTable = {
   serviceId: "serviceId",
   clientId: "clientId",
   practitionerId: "practitionerId",
+  idempotencyKey: "idempotencyKey",
 };
 const mockTimeBlocksTable = { startTime: "startTime", endTime: "endTime" };
 const mockSlotReservationsTable = {
@@ -70,7 +71,13 @@ const testSchemas = {
 };
 
 const createAdapter = (config: HomegrownAdapterConfig) =>
-  createHomegrownAdapter({ schemas: testSchemas, ...config });
+  createHomegrownAdapter({
+    schemas: testSchemas,
+    // There is no built-in fallback handle anymore; tests configure an
+    // anonymized one explicitly (override per-test as needed).
+    defaultPractitionerHandle: "alex",
+    ...config,
+  });
 
 // Mock drizzle-orm operators — return identity functions for where-clause building
 vi.mock("drizzle-orm", () => ({
@@ -203,10 +210,10 @@ const SERVICE_ROW = {
 
 const PRACTITIONER_ROW = {
   id: "prac-uuid-1",
-  handle: "jen",
-  name: "Jen Sullivan",
+  handle: "alex",
+  name: "Alex Rivera",
   title: "Licensed Massage Therapist",
-  photoUrl: "https://example.com/jen.jpg",
+  photoUrl: "https://example.com/alex.jpg",
 };
 
 const CLIENT_ROW = {
@@ -456,10 +463,10 @@ describe("HomegrownAdapter", () => {
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({
         id: "prac-uuid-1",
-        name: "Jen Sullivan",
+        name: "Alex Rivera",
         email: undefined,
         description: "Licensed Massage Therapist",
-        image: "https://example.com/jen.jpg",
+        image: "https://example.com/alex.jpg",
         timezone: "America/New_York",
       });
     });
@@ -496,7 +503,7 @@ describe("HomegrownAdapter", () => {
       );
 
       expect(result.id).toBe("prac-uuid-1");
-      expect(result.name).toBe("Jen Sullivan");
+      expect(result.name).toBe("Alex Rivera");
     });
 
     it("fails when provider not found", async () => {
@@ -705,12 +712,14 @@ describe("HomegrownAdapter", () => {
   describe("createBooking", () => {
     it("resolves service, finds client, gets practitioner, inserts booking", async () => {
       // createBooking internally calls:
-      //   1. resolveService (select)
-      //   2. findOrCreateClient → find by email (select) → update if exists
-      //   3. getDefaultPractitioner (select)
-      //   4. insert booking
+      //   1. idempotency pre-lookup (select, miss)
+      //   2. resolveService (select)
+      //   3. findOrCreateClient → find by email (select) → update if exists
+      //   4. getDefaultPractitioner (select)
+      //   5. insert booking
       const mockDb = createSequencedMockDb(
         [
+          [], // idempotency pre-lookup (no existing booking)
           [SERVICE_ROW], // resolveService
           [CLIENT_ROW], // findOrCreateClient email lookup
           [PRACTITIONER_ROW], // getDefaultPractitioner
@@ -741,6 +750,7 @@ describe("HomegrownAdapter", () => {
 
     it("fails when service not found during booking", async () => {
       const mockDb = createSequencedMockDb([
+        [], // idempotency pre-lookup (no existing booking)
         [], // resolveService returns empty
       ]);
 
@@ -760,6 +770,7 @@ describe("HomegrownAdapter", () => {
     it("creates new client when email not found during booking", async () => {
       const mockDb = createSequencedMockDb(
         [
+          [], // idempotency pre-lookup (no existing booking)
           [SERVICE_ROW], // resolveService
           [], // findOrCreateClient: email not found
           [PRACTITIONER_ROW], // getDefaultPractitioner
@@ -784,6 +795,526 @@ describe("HomegrownAdapter", () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // Idempotency dedup
+  // -------------------------------------------------------------------------
+
+  describe("createBooking idempotency", () => {
+    it("replays the existing booking for a duplicate idempotency key without a second insert", async () => {
+      // Pre-lookup hits → loadBookingById (4 selects) → no insert at all
+      const mockDb = createSequencedMockDb([
+        [{ ...BOOKING_ROW, idempotencyKey: "idem-dup" }], // pre-lookup hit
+        [BOOKING_ROW], // loadBookingById: booking
+        [SERVICE_ROW], // loadBookingById: service
+        [CLIENT_ROW], // loadBookingById: client
+        [PRACTITIONER_ROW], // loadBookingById: practitioner
+      ]);
+
+      const adapter = createAdapter({ getDb: async () => mockDb });
+      const result = await Effect.runPromise(
+        adapter.createBooking({
+          serviceId: "svc-uuid-1",
+          datetime: "2026-04-20T14:00:00.000Z",
+          client: TEST_CLIENT,
+          idempotencyKey: "idem-dup",
+        }),
+      );
+
+      expect(result.id).toBe("booking-uuid-1");
+      expect(result.confirmationCode).toBe("ABC123");
+      expect(mockDb.insert).not.toHaveBeenCalled();
+    });
+
+    it("recovers from a unique-violation race by replaying the winning row", async () => {
+      // Pre-lookup misses, insert hits the (schema-package-owned) unique
+      // index, replay lookup finds the row the concurrent request inserted.
+      let selectCall = 0;
+      const selectSequence = [
+        [], // 1. idempotency pre-lookup (miss — race window)
+        [SERVICE_ROW], // 2. resolveService
+        [CLIENT_ROW], // 3. findOrCreateClient email lookup
+        [PRACTITIONER_ROW], // 4. getDefaultPractitioner
+        [{ ...BOOKING_ROW, idempotencyKey: "idem-race" }], // 5. replay lookup
+        [BOOKING_ROW], // 6. loadBookingById: booking
+        [SERVICE_ROW], // 7. loadBookingById: service
+        [CLIENT_ROW], // 8. loadBookingById: client
+        [PRACTITIONER_ROW], // 9. loadBookingById: practitioner
+      ];
+      const makeSelectChain = () => {
+        const rows = selectSequence[selectCall] ?? [];
+        selectCall++;
+        const terminals = {
+          limit: vi.fn().mockResolvedValue(rows),
+          orderBy: vi.fn().mockResolvedValue(rows),
+        };
+        return {
+          where: vi.fn().mockReturnValue(terminals),
+          orderBy: terminals.orderBy,
+          limit: terminals.limit,
+        };
+      };
+      const uniqueViolation = Object.assign(
+        new Error(
+          'duplicate key value violates unique constraint "bookings_idempotency_key_key"',
+        ),
+        { code: "23505" },
+      );
+      const mockDb = {
+        select: vi.fn().mockImplementation(() => ({
+          from: vi.fn().mockImplementation(makeSelectChain),
+        })),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockReturnValue({
+            returning: vi.fn().mockRejectedValue(uniqueViolation),
+          }),
+        }),
+        update: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(undefined),
+          }),
+        }),
+      };
+
+      const adapter = createAdapter({ getDb: async () => mockDb });
+      const result = await Effect.runPromise(
+        adapter.createBooking({
+          serviceId: "svc-uuid-1",
+          datetime: "2026-04-20T14:00:00.000Z",
+          client: TEST_CLIENT,
+          idempotencyKey: "idem-race",
+        }),
+      );
+
+      expect(result.id).toBe("booking-uuid-1");
+      expect(mockDb.insert).toHaveBeenCalledTimes(1);
+    });
+
+    it("rethrows unique violations that cannot be replayed", async () => {
+      // Same race shape, but the replay lookup also misses (e.g. the
+      // violation came from a different constraint).
+      let selectCall = 0;
+      const selectSequence = [
+        [], // pre-lookup miss
+        [SERVICE_ROW],
+        [CLIENT_ROW],
+        [PRACTITIONER_ROW],
+        [], // replay lookup also misses
+      ];
+      const makeSelectChain = () => {
+        const rows = selectSequence[selectCall] ?? [];
+        selectCall++;
+        const terminals = {
+          limit: vi.fn().mockResolvedValue(rows),
+          orderBy: vi.fn().mockResolvedValue(rows),
+        };
+        return {
+          where: vi.fn().mockReturnValue(terminals),
+          orderBy: terminals.orderBy,
+          limit: terminals.limit,
+        };
+      };
+      const mockDb = {
+        select: vi.fn().mockImplementation(() => ({
+          from: vi.fn().mockImplementation(makeSelectChain),
+        })),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockReturnValue({
+            returning: vi
+              .fn()
+              .mockRejectedValue(
+                Object.assign(new Error("duplicate key value"), {
+                  code: "23505",
+                }),
+              ),
+          }),
+        }),
+        update: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(undefined),
+          }),
+        }),
+      };
+
+      const adapter = createAdapter({ getDb: async () => mockDb });
+      const error = await Effect.runPromise(
+        Effect.flip(
+          adapter.createBooking({
+            serviceId: "svc-uuid-1",
+            datetime: "2026-04-20T14:00:00.000Z",
+            client: TEST_CLIENT,
+            idempotencyKey: "idem-orphan",
+          }),
+        ),
+      );
+
+      expect(error._tag).toBe("InfrastructureError");
+    });
+
+    it("surfaces the original unique violation when the replay lookup itself fails", async () => {
+      // Insert hits the unique index, then the recovery lookup also rejects
+      // (e.g. transient connection error). The root-cause unique violation
+      // must survive, not the secondary lookup failure.
+      let selectCall = 0;
+      const replayLookupFailure = new Error("connection terminated");
+      const selectSequence: (Record<string, unknown>[] | Error)[] = [
+        [], // pre-lookup miss
+        [SERVICE_ROW],
+        [CLIENT_ROW],
+        [PRACTITIONER_ROW],
+        replayLookupFailure, // replay lookup rejects
+      ];
+      const makeSelectChain = () => {
+        const entry = selectSequence[selectCall] ?? [];
+        selectCall++;
+        const terminal =
+          entry instanceof Error
+            ? vi.fn().mockRejectedValue(entry)
+            : vi.fn().mockResolvedValue(entry);
+        const terminals = { limit: terminal, orderBy: terminal };
+        return {
+          where: vi.fn().mockReturnValue(terminals),
+          orderBy: terminals.orderBy,
+          limit: terminals.limit,
+        };
+      };
+      const uniqueViolation = Object.assign(
+        new Error(
+          'duplicate key value violates unique constraint "bookings_idempotency_key_key"',
+        ),
+        { code: "23505" },
+      );
+      const mockDb = {
+        select: vi.fn().mockImplementation(() => ({
+          from: vi.fn().mockImplementation(makeSelectChain),
+        })),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockReturnValue({
+            returning: vi.fn().mockRejectedValue(uniqueViolation),
+          }),
+        }),
+        update: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(undefined),
+          }),
+        }),
+      };
+
+      const adapter = createAdapter({ getDb: async () => mockDb });
+      const error = await Effect.runPromise(
+        Effect.flip(
+          adapter.createBooking({
+            serviceId: "svc-uuid-1",
+            datetime: "2026-04-20T14:00:00.000Z",
+            client: TEST_CLIENT,
+            idempotencyKey: "idem-double-fault",
+          }),
+        ),
+      );
+
+      expect(error._tag).toBe("InfrastructureError");
+      expect(error).toMatchObject({
+        message: expect.stringContaining("duplicate key value"),
+      });
+      expect((error as { message: string }).message).not.toContain(
+        "connection terminated",
+      );
+    });
+
+    it("treats an empty-string idempotency key as absent and persists null", async () => {
+      // "" skips the pre-insert lookup entirely (first select is
+      // resolveService) and is normalized to null on insert so it can never
+      // occupy the unique index slot.
+      let selectCall = 0;
+      const selectSequence = [
+        [SERVICE_ROW], // resolveService (no pre-lookup before it)
+        [CLIENT_ROW], // findOrCreateClient email lookup
+        [PRACTITIONER_ROW], // getDefaultPractitioner
+      ];
+      const makeSelectChain = () => {
+        const rows = selectSequence[selectCall] ?? [];
+        selectCall++;
+        const terminals = {
+          limit: vi.fn().mockResolvedValue(rows),
+          orderBy: vi.fn().mockResolvedValue(rows),
+        };
+        return {
+          where: vi.fn().mockReturnValue(terminals),
+          orderBy: terminals.orderBy,
+          limit: terminals.limit,
+        };
+      };
+      const insertedValues: Record<string, unknown>[] = [];
+      const mockDb = {
+        select: vi.fn().mockImplementation(() => ({
+          from: vi.fn().mockImplementation(makeSelectChain),
+        })),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockImplementation((v: Record<string, unknown>) => {
+            insertedValues.push(v);
+            return { returning: vi.fn().mockResolvedValue([BOOKING_ROW]) };
+          }),
+        }),
+        update: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(undefined),
+          }),
+        }),
+      };
+
+      const adapter = createAdapter({ getDb: async () => mockDb });
+      const result = await Effect.runPromise(
+        adapter.createBooking({
+          serviceId: "svc-uuid-1",
+          datetime: "2026-04-20T14:00:00.000Z",
+          client: TEST_CLIENT,
+          idempotencyKey: "",
+        }),
+      );
+
+      expect(result.id).toBe("booking-uuid-1");
+      // Pre-insert dedup lookup skipped: exactly the 3 pipeline selects ran.
+      expect(mockDb.select).toHaveBeenCalledTimes(3);
+      expect(insertedValues[0].idempotencyKey).toBeNull();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Confirmation code prefix threading
+  // -------------------------------------------------------------------------
+
+  describe("confirmation code prefix", () => {
+    const createCapturingDb = () => {
+      let selectCall = 0;
+      const selectSequence = [
+        [], // idempotency pre-lookup
+        [SERVICE_ROW], // resolveService
+        [CLIENT_ROW], // findOrCreateClient
+        [PRACTITIONER_ROW], // getDefaultPractitioner
+      ];
+      const makeSelectChain = () => {
+        const rows = selectSequence[selectCall] ?? [];
+        selectCall++;
+        const terminals = {
+          limit: vi.fn().mockResolvedValue(rows),
+          orderBy: vi.fn().mockResolvedValue(rows),
+        };
+        return {
+          where: vi.fn().mockReturnValue(terminals),
+          orderBy: terminals.orderBy,
+          limit: terminals.limit,
+        };
+      };
+      const insertedValues: Record<string, unknown>[] = [];
+      return {
+        insertedValues,
+        db: {
+          select: vi.fn().mockImplementation(() => ({
+            from: vi.fn().mockImplementation(makeSelectChain),
+          })),
+          insert: vi.fn().mockReturnValue({
+            values: vi.fn().mockImplementation((v: Record<string, unknown>) => {
+              insertedValues.push(v);
+              return { returning: vi.fn().mockResolvedValue([BOOKING_ROW]) };
+            }),
+          }),
+          update: vi.fn().mockReturnValue({
+            set: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue(undefined),
+            }),
+          }),
+        },
+      };
+    };
+
+    const bookingRequest = {
+      serviceId: "svc-uuid-1",
+      datetime: "2026-04-20T14:00:00.000Z",
+      client: TEST_CLIENT,
+      idempotencyKey: "idem-prefix",
+    };
+
+    it("generates confirmation codes with the neutral BK prefix by default", async () => {
+      const { db, insertedValues } = createCapturingDb();
+      const adapter = createAdapter({ getDb: async () => db });
+
+      await Effect.runPromise(adapter.createBooking(bookingRequest));
+
+      expect(insertedValues[0].confirmationCode).toMatch(/^BK-[A-Z2-9]{6}$/);
+    });
+
+    it("threads confirmationCodePrefix from config into generated codes", async () => {
+      const { db, insertedValues } = createCapturingDb();
+      const adapter = createAdapter({
+        getDb: async () => db,
+        confirmationCodePrefix: "MI",
+      });
+
+      await Effect.runPromise(adapter.createBooking(bookingRequest));
+
+      expect(insertedValues[0].confirmationCode).toMatch(/^MI-[A-Z2-9]{6}$/);
+    });
+
+    it("persists the idempotency key on insert", async () => {
+      const { db, insertedValues } = createCapturingDb();
+      const adapter = createAdapter({ getDb: async () => db });
+
+      await Effect.runPromise(adapter.createBooking(bookingRequest));
+
+      expect(insertedValues[0].idempotencyKey).toBe("idem-prefix");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Typed error mapping
+  // -------------------------------------------------------------------------
+
+  describe("typed error mapping", () => {
+    it("maps unknown service in getService to ValidationError(serviceId)", async () => {
+      const mockDb = createMockDb({ select: [] });
+      mockDb._terminals.limit.mockResolvedValue([]);
+      const adapter = createAdapter({ getDb: async () => mockDb });
+
+      const error = await Effect.runPromise(
+        Effect.flip(adapter.getService("nonexistent")),
+      );
+
+      expect(error._tag).toBe("ValidationError");
+      expect(error).toMatchObject({
+        field: "serviceId",
+        message: "Service nonexistent not found",
+        value: "nonexistent",
+      });
+    });
+
+    it("maps unknown provider in getProvider to ValidationError(providerId)", async () => {
+      const mockDb = createMockDb({ select: [] });
+      mockDb._terminals.limit.mockResolvedValue([]);
+      const adapter = createAdapter({ getDb: async () => mockDb });
+
+      const error = await Effect.runPromise(
+        Effect.flip(adapter.getProvider("nonexistent")),
+      );
+
+      expect(error._tag).toBe("ValidationError");
+      expect(error).toMatchObject({
+        field: "providerId",
+        message: "Provider nonexistent not found",
+      });
+    });
+
+    it("maps unknown booking in getBooking to ValidationError(bookingId)", async () => {
+      const mockDb = createSequencedMockDb([[]]);
+      const adapter = createAdapter({ getDb: async () => mockDb });
+
+      const error = await Effect.runPromise(
+        Effect.flip(adapter.getBooking("nonexistent")),
+      );
+
+      expect(error._tag).toBe("ValidationError");
+      expect(error).toMatchObject({
+        field: "bookingId",
+        message: "Booking nonexistent not found",
+      });
+    });
+
+    it("maps unknown booking in rescheduleBooking to ValidationError(bookingId)", async () => {
+      const mockDb = createSequencedMockDb([[]]);
+      const adapter = createAdapter({ getDb: async () => mockDb });
+
+      const error = await Effect.runPromise(
+        Effect.flip(
+          adapter.rescheduleBooking("nonexistent", "2026-04-21T10:00:00.000Z"),
+        ),
+      );
+
+      expect(error._tag).toBe("ValidationError");
+      expect(error).toMatchObject({ field: "bookingId" });
+    });
+
+    it("maps unknown service in createBooking to ValidationError(serviceId)", async () => {
+      const mockDb = createSequencedMockDb([
+        [], // idempotency pre-lookup
+        [], // resolveService miss
+      ]);
+      const adapter = createAdapter({ getDb: async () => mockDb });
+
+      const error = await Effect.runPromise(
+        Effect.flip(
+          adapter.createBooking({
+            serviceId: "nonexistent",
+            datetime: "2026-04-20T14:00:00.000Z",
+            client: TEST_CLIENT,
+            idempotencyKey: "idem-missing-svc",
+          }),
+        ),
+      );
+
+      expect(error._tag).toBe("ValidationError");
+      expect(error).toMatchObject({ field: "serviceId" });
+    });
+
+    it("keeps InfrastructureError(UNKNOWN) for unrecognized failures", async () => {
+      const adapter = createAdapter({
+        getDb: async () => {
+          throw new Error("ECONNREFUSED");
+        },
+      });
+
+      const error = await Effect.runPromise(Effect.flip(adapter.getServices()));
+
+      expect(error._tag).toBe("InfrastructureError");
+      expect(error).toMatchObject({ code: "UNKNOWN", message: "ECONNREFUSED" });
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Default practitioner handle requirement (no built-in fallback)
+  // -------------------------------------------------------------------------
+
+  describe("default practitioner handle requirement", () => {
+    it("fails getProviders with ValidationError when no handle is configured", async () => {
+      const mockDb = createMockDb({ select: [PRACTITIONER_ROW] });
+      const adapter = createHomegrownAdapter({
+        schemas: testSchemas,
+        getDb: async () => mockDb,
+      });
+
+      const error = await Effect.runPromise(Effect.flip(adapter.getProviders()));
+
+      expect(error._tag).toBe("ValidationError");
+      expect(error).toMatchObject({ field: "defaultPractitionerHandle" });
+      expect((error as { message: string }).message).toContain(
+        "defaultPractitionerHandle",
+      );
+    });
+
+    it("fails createBooking with ValidationError when no handle is configured", async () => {
+      const mockDb = createSequencedMockDb([
+        [], // idempotency pre-lookup
+        [SERVICE_ROW], // resolveService
+        [CLIENT_ROW], // findOrCreateClient
+      ]);
+      const adapter = createHomegrownAdapter({
+        schemas: testSchemas,
+        getDb: async () => mockDb,
+      });
+
+      const error = await Effect.runPromise(
+        Effect.flip(
+          adapter.createBooking({
+            serviceId: "svc-uuid-1",
+            datetime: "2026-04-20T14:00:00.000Z",
+            client: TEST_CLIENT,
+            idempotencyKey: "idem-no-handle",
+          }),
+        ),
+      );
+
+      expect(error._tag).toBe("ValidationError");
+      expect(error).toMatchObject({ field: "defaultPractitionerHandle" });
+    });
+  });
+
   describe("getBooking", () => {
     it("joins booking, service, client, and practitioner data", async () => {
       // getBooking does 4 sequential selects:
@@ -805,7 +1336,7 @@ describe("HomegrownAdapter", () => {
 
       expect(result.id).toBe("booking-uuid-1");
       expect(result.serviceName).toBe("Deep Tissue Massage");
-      expect(result.providerName).toBe("Jen Sullivan");
+      expect(result.providerName).toBe("Alex Rivera");
       expect(result.client.firstName).toBe("Alice");
       expect(result.client.email).toBe("alice@example.com");
       expect(result.duration).toBe(60);

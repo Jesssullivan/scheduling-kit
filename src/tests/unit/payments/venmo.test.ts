@@ -112,9 +112,9 @@ describe('Venmo Adapter', () => {
         environment: 'sandbox',
         webhookId: 'test-webhook-id',
         returnUrl:
-          'https://massageithaca-scheduling-bridge.taila4c78d.ts.net/booking',
+          'https://examplestudio-scheduling-bridge.example.net/booking',
         cancelUrl:
-          'https://massageithaca-scheduling-bridge.taila4c78d.ts.net/booking',
+          'https://examplestudio-scheduling-bridge.example.net/booking',
       });
 
       await expectSuccess(
@@ -139,10 +139,10 @@ describe('Venmo Adapter', () => {
       const context = body.payment_source?.venmo?.experience_context;
 
       expect(context?.return_url).toBe(
-        'https://massageithaca-scheduling-bridge.taila4c78d.ts.net/booking',
+        'https://examplestudio-scheduling-bridge.example.net/booking',
       );
       expect(context?.cancel_url).toBe(
-        'https://massageithaca-scheduling-bridge.taila4c78d.ts.net/booking',
+        'https://examplestudio-scheduling-bridge.example.net/booking',
       );
     });
 

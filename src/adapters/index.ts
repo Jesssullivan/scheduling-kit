@@ -28,6 +28,7 @@ export {
   isSlotAvailable,
   getDatesWithAvailability,
   generateConfirmationCode,
+  DEFAULT_CONFIRMATION_CODE_PREFIX,
   getEffectiveHours,
   hasOverlap,
   parseTimeInTz,

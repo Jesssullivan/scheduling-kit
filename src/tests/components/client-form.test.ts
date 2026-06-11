@@ -202,21 +202,21 @@ describe('ClientForm validation logic', () => {
 
     it('formats 7+ digits with full US phone format', () => {
       expect(formatPhone('6072014')).toBe('(607) 201-4');
-      expect(formatPhone('6072014926')).toBe('(607) 201-4926');
+      expect(formatPhone('6075550123')).toBe('(607) 555-0123');
     });
 
     it('truncates digits beyond 10', () => {
-      expect(formatPhone('60720149261')).toBe('(607) 201-4926');
+      expect(formatPhone('60755501231')).toBe('(607) 555-0123');
     });
 
     it('strips non-digit characters before formatting', () => {
-      expect(formatPhone('(607) 201-4926')).toBe('(607) 201-4926');
-      expect(formatPhone('607.201.4926')).toBe('(607) 201-4926');
-      expect(formatPhone('607-201-4926')).toBe('(607) 201-4926');
+      expect(formatPhone('(607) 555-0123')).toBe('(607) 555-0123');
+      expect(formatPhone('607.555.0123')).toBe('(607) 555-0123');
+      expect(formatPhone('607-555-0123')).toBe('(607) 555-0123');
     });
 
     it('handles letters and symbols mixed with digits', () => {
-      expect(formatPhone('abc607def201ghi4926')).toBe('(607) 201-4926');
+      expect(formatPhone('abc607def555ghi0123')).toBe('(607) 555-0123');
     });
 
     it('handles all non-digit input', () => {
@@ -332,7 +332,7 @@ describe('ClientForm validation logic', () => {
         firstName: 'Jane',
         lastName: 'Doe',
         email: 'jane@example.com',
-        phone: '(607) 201-4926',
+        phone: '(607) 555-0123',
         notes: 'Left TMJ pain',
         customFields: {
           'field-13933959': 'true',
@@ -348,14 +348,14 @@ describe('ClientForm validation logic', () => {
         firstName: ' Jane '.trim(),
         lastName: ' Doe '.trim(),
         email: ' Jane@Example.com '.trim().toLowerCase(),
-        phone: '(607) 201-4926'.replace(/\D/g, '') || undefined,
+        phone: '(607) 555-0123'.replace(/\D/g, '') || undefined,
         notes: ''.trim() || undefined,
       };
 
       expect(info.firstName).toBe('Jane');
       expect(info.lastName).toBe('Doe');
       expect(info.email).toBe('jane@example.com');
-      expect(info.phone).toBe('6072014926');
+      expect(info.phone).toBe('6075550123');
       expect(info.notes).toBeUndefined();
     });
   });

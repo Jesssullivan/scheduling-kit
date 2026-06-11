@@ -13,7 +13,7 @@ import {
 } from '../lib/url-builder.js';
 
 describe('buildAcuityUrl', () => {
-  const baseUrl = 'https://MassageIthaca.as.me';
+  const baseUrl = 'https://ExampleStudio.as.me';
 
   describe('client pre-fill', () => {
     it('adds client information to URL', () => {
@@ -23,14 +23,14 @@ describe('buildAcuityUrl', () => {
           firstName: 'Jane',
           lastName: 'Doe',
           email: 'jane@example.com',
-          phone: '6072014926',
+          phone: '6075550123',
         },
       });
 
       expect(url).toContain('firstName=Jane');
       expect(url).toContain('lastName=Doe');
       expect(url).toContain('email=jane%40example.com');
-      expect(url).toContain('phone=6072014926');
+      expect(url).toContain('phone=6075550123');
     });
 
     it('handles partial client info', () => {
@@ -198,7 +198,7 @@ describe('buildAcuityUrl', () => {
           firstName: 'Jane',
           lastName: 'Doe',
           email: 'jane@example.com',
-          phone: '6072014926',
+          phone: '6075550123',
         },
         booking: {
           serviceId: '52957336',
@@ -218,7 +218,7 @@ describe('buildAcuityUrl', () => {
 });
 
 describe('convenience functions', () => {
-  const baseUrl = 'https://MassageIthaca.as.me';
+  const baseUrl = 'https://ExampleStudio.as.me';
 
   it('buildCategoryUrl creates category URL', () => {
     const url = buildCategoryUrl(baseUrl, 'TMD Massage', { firstName: 'Jane' });
@@ -249,24 +249,24 @@ describe('convenience functions', () => {
 describe('parseAcuityUrl', () => {
   it('parses client info', () => {
     const url =
-      'https://MassageIthaca.as.me?firstName=Jane&lastName=Doe&email=jane%40example.com&phone=6072014926';
+      'https://ExampleStudio.as.me?firstName=Jane&lastName=Doe&email=jane%40example.com&phone=6075550123';
     const parsed = parseAcuityUrl(url);
 
     expect(parsed.client.firstName).toBe('Jane');
     expect(parsed.client.lastName).toBe('Doe');
     expect(parsed.client.email).toBe('jane@example.com');
-    expect(parsed.client.phone).toBe('6072014926');
+    expect(parsed.client.phone).toBe('6075550123');
   });
 
   it('parses single service ID', () => {
-    const url = 'https://MassageIthaca.as.me?appointmentType=12345';
+    const url = 'https://ExampleStudio.as.me?appointmentType=12345';
     const parsed = parseAcuityUrl(url);
 
     expect(parsed.booking.serviceId).toBe('12345');
   });
 
   it('parses category', () => {
-    const url = 'https://MassageIthaca.as.me?appointmentType=category%3ATMD+Massage';
+    const url = 'https://ExampleStudio.as.me?appointmentType=category%3ATMD+Massage';
     const parsed = parseAcuityUrl(url);
 
     expect(parsed.booking.category).toBe('TMD Massage');
@@ -274,14 +274,14 @@ describe('parseAcuityUrl', () => {
   });
 
   it('parses datetime', () => {
-    const url = 'https://MassageIthaca.as.me?datetime=2026-02-15T14%3A00-05%3A00';
+    const url = 'https://ExampleStudio.as.me?datetime=2026-02-15T14%3A00-05%3A00';
     const parsed = parseAcuityUrl(url);
 
     expect(parsed.booking.datetime).toBe('2026-02-15T14:00-05:00');
   });
 
   it('parses custom fields', () => {
-    const url = 'https://MassageIthaca.as.me?field%3A12345=Value&field%3A67890%5B%5D=A&field%3A67890%5B%5D=B';
+    const url = 'https://ExampleStudio.as.me?field%3A12345=Value&field%3A67890%5B%5D=A&field%3A67890%5B%5D=B';
     const parsed = parseAcuityUrl(url);
 
     expect(parsed.booking.customFields?.['12345']).toBe('Value');
@@ -289,18 +289,18 @@ describe('parseAcuityUrl', () => {
   });
 
   it('extracts base URL', () => {
-    const url = 'https://MassageIthaca.as.me/schedule?appointmentType=12345';
+    const url = 'https://ExampleStudio.as.me/schedule?appointmentType=12345';
     const parsed = parseAcuityUrl(url);
 
-    expect(parsed.baseUrl).toBe('https://massageithaca.as.me/schedule');
+    expect(parsed.baseUrl).toBe('https://examplestudio.as.me/schedule');
   });
 });
 
 describe('generateIframeHtml', () => {
   it('generates basic iframe', () => {
-    const html = generateIframeHtml('https://MassageIthaca.as.me');
+    const html = generateIframeHtml('https://ExampleStudio.as.me');
 
-    expect(html).toContain('src="https://MassageIthaca.as.me"');
+    expect(html).toContain('src="https://ExampleStudio.as.me"');
     expect(html).toContain('title="Schedule Appointment"');
     expect(html).toContain('width="100%"');
     expect(html).toContain('height="800"');
@@ -308,7 +308,7 @@ describe('generateIframeHtml', () => {
   });
 
   it('accepts custom options', () => {
-    const html = generateIframeHtml('https://MassageIthaca.as.me', {
+    const html = generateIframeHtml('https://ExampleStudio.as.me', {
       width: 600,
       height: 400,
       title: 'Book Now',

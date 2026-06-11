@@ -215,12 +215,17 @@ export const getDatesWithAvailability = (
 
 const ALPHANUMERIC = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // No I/O/0/1
 
-export const generateConfirmationCode = (): string => {
+/** Neutral default prefix for confirmation codes ("BK" = booking). */
+export const DEFAULT_CONFIRMATION_CODE_PREFIX = 'BK';
+
+export const generateConfirmationCode = (
+  prefix: string = DEFAULT_CONFIRMATION_CODE_PREFIX,
+): string => {
   let code = '';
   for (let i = 0; i < 6; i++) {
     code += ALPHANUMERIC[Math.floor(Math.random() * ALPHANUMERIC.length)];
   }
-  return `MI-${code}`;
+  return `${prefix}-${code}`;
 };
 
 // ---------------------------------------------------------------------------
