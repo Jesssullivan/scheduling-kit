@@ -7,7 +7,7 @@
  * no application site or lane names.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   resolveSchedulingCapabilities,
   type DynamicCapabilityInput,
@@ -115,6 +115,28 @@ describe('resolveSchedulingCapabilities', () => {
       expect(caps.owner).toBe('bridge');
     });
 
+    it('falls through an unknown site to a known lane row (no site short-circuit)', () => {
+      // A present-but-unmatched site must not short-circuit to dynamic
+      // synthesis; the lane tier is still consulted.
+      const caps = resolveSchedulingCapabilities(
+        { site: 'no-such-site', lane: 'bridge-lane', backend: 'acuity' },
+        TABLES,
+      );
+      expect(caps.source).toBe('lane');
+      expect(caps.environment).toBe('bridge-lane');
+    });
+
+    it('lane row wins even when the query backend disagrees (no env-var drift)', () => {
+      const caps = resolveSchedulingCapabilities(
+        { site: null, lane: 'native-lane', backend: 'acuity' },
+        TABLES,
+      );
+      // The shared backend value must not flip a fixed lane's policy either.
+      expect(caps.source).toBe('lane');
+      expect(caps.backend).toBe('homegrown');
+      expect(caps.publicBookingMode).toBe('self-service');
+    });
+
     it('synthesizes dynamically when neither site nor lane matches', () => {
       const caps = resolveSchedulingCapabilities(
         { site: null, lane: null, backend: 'homegrown' },
@@ -197,6 +219,38 @@ describe('resolveSchedulingCapabilities', () => {
         TABLES,
       );
       expect(caps.source).toBe('dynamic');
+    });
+  });
+
+  describe('dynamic synthesis laziness', () => {
+    it('does not invoke synthesizeDynamic when a site row matches', () => {
+      const synthesizeSpy = vi.fn(synthesizeDynamic);
+      const caps = resolveSchedulingCapabilities(
+        { site: 'public-prod', lane: null, backend: 'homegrown' },
+        { siteRows: SITE_ROWS, laneRows: LANE_ROWS, synthesizeDynamic: synthesizeSpy },
+      );
+      expect(caps.source).toBe('site');
+      expect(synthesizeSpy).not.toHaveBeenCalled();
+    });
+
+    it('does not invoke synthesizeDynamic when a lane row matches', () => {
+      const synthesizeSpy = vi.fn(synthesizeDynamic);
+      const caps = resolveSchedulingCapabilities(
+        { site: null, lane: 'bridge-lane', backend: 'homegrown' },
+        { siteRows: SITE_ROWS, laneRows: LANE_ROWS, synthesizeDynamic: synthesizeSpy },
+      );
+      expect(caps.source).toBe('lane');
+      expect(synthesizeSpy).not.toHaveBeenCalled();
+    });
+
+    it('invokes synthesizeDynamic exactly once when both lookups miss', () => {
+      const synthesizeSpy = vi.fn(synthesizeDynamic);
+      const caps = resolveSchedulingCapabilities(
+        { site: null, lane: null, backend: 'acuity' },
+        { siteRows: SITE_ROWS, laneRows: LANE_ROWS, synthesizeDynamic: synthesizeSpy },
+      );
+      expect(caps.source).toBe('dynamic');
+      expect(synthesizeSpy).toHaveBeenCalledTimes(1);
     });
   });
 

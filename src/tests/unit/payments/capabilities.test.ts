@@ -66,7 +66,7 @@ describe('extractCapabilities', () => {
     expect(caps.methods).not.toContainEqual(expect.objectContaining({ id: 'venmo' }));
   });
 
-  it('should prefer practitioner payee email over env var', () => {
+  it('should enable Venmo when both practitioner and platform payee emails are present', () => {
     const settings = { paypal_payee_email: 'practitioner@example.com' };
     const env = {
       PUBLIC_PAYPAL_CLIENT_ID: 'paypal_123',
@@ -74,8 +74,9 @@ describe('extractCapabilities', () => {
     };
     const caps = extractCapabilities(settings, env);
     expect(caps.venmo).not.toBeNull();
-    // Payee routing uses the practitioner value; env is fallback only.
-    // (Payee email is server-side routing input, not exposed on the capability.)
+    // Payee email only gates enablement here; which value routes the payment
+    // is decided outside this function, so settings-over-env precedence for
+    // the payee is not observable (and not asserted) at this API boundary.
     expect(caps.venmo!.clientId).toBe('paypal_123');
   });
 
