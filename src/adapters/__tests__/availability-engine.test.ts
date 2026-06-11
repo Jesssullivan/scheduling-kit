@@ -36,8 +36,22 @@ const BASE_CONFIG: SlotConfig = {
   timezone: 'America/New_York',
 };
 
-// A Monday in the future
+// A Monday. The engine filters slots earlier than `now + minAdvanceHours`
+// (even with minAdvanceHours: 0, `earliest` is `now`), so any real-clock run
+// after this date silently filters every candidate slot and the suite fails.
+// Freeze the system time before each test so the fixture date is always
+// "in the future" and results are identical on any machine, any day, any TZ.
 const TEST_DATE = '2026-06-01'; // Monday
+const FROZEN_NOW = new Date('2026-05-25T12:00:00Z'); // one week before TEST_DATE
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(FROZEN_NOW);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 // ---------------------------------------------------------------------------
 // getEffectiveHours
@@ -440,8 +454,8 @@ describe('edge cases', () => {
 
   it('minAdvanceHours filters past slots', () => {
     // Set "now" to be at 13:00 ET on test date
-    const fakeNow = parseTimeInTz(TEST_DATE, '13:00', 'America/New_York').getTime();
-    vi.spyOn(Date, 'now').mockReturnValue(fakeNow);
+    const fakeNow = parseTimeInTz(TEST_DATE, '13:00', 'America/New_York');
+    vi.setSystemTime(fakeNow);
 
     const config = { ...BASE_CONFIG, minAdvanceHours: 2 };
     const slots = getAvailableSlots(TEST_DATE, MONDAY_HOURS, null, [], config);
@@ -451,8 +465,15 @@ describe('edge cases', () => {
     expect(new Date(slots[0].datetime).getTime()).toBeGreaterThanOrEqual(
       parseTimeInTz(TEST_DATE, '15:00', 'America/New_York').getTime(),
     );
+  });
 
-    vi.restoreAllMocks();
+  it('filters out every slot once the date is in the past (regression)', () => {
+    // This is the failure mode that broke the suite after 2026-06-01: with the
+    // clock past TEST_DATE, `earliest` (now + minAdvanceHours) exceeds every
+    // candidate slot and the engine correctly returns nothing.
+    vi.setSystemTime(new Date('2026-06-10T12:00:00Z')); // 9 days after TEST_DATE
+    const slots = getAvailableSlots(TEST_DATE, MONDAY_HOURS, null, [], BASE_CONFIG);
+    expect(slots.length).toBe(0);
   });
 
   it('multiple overlapping blocks handled correctly', () => {
