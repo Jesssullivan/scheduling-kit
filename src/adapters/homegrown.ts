@@ -21,6 +21,7 @@ import type {
   SlotSoftHold,
   ClientInfo,
   SchedulingResult,
+  SchedulingError,
   BookingStatus,
   PaymentStatus,
 } from "../core/types.js";
@@ -91,9 +92,64 @@ export interface HomegrownAdapterConfig {
   bufferMinutes?: number;
   /** Minimum advance booking hours */
   minAdvanceHours?: number;
-  /** Default practitioner handle (solo practice) */
+  /**
+   * Default practitioner handle (solo practice).
+   *
+   * There is no built-in fallback: operations that resolve the default
+   * practitioner (getProviders, getProvidersForService, createBooking) fail
+   * with a typed ValidationError when this is not configured.
+   */
   defaultPractitionerHandle?: string;
+  /**
+   * Prefix for generated booking confirmation codes (e.g. "BK" → "BK-X7K2P9").
+   * Defaults to the neutral "BK". Adopters with established prefixes must set
+   * this explicitly (consumer-visible change for upgraders).
+   */
+  confirmationCodePrefix?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Internal typed-error carrier
+// ---------------------------------------------------------------------------
+
+/**
+ * Internal carrier that smuggles a typed SchedulingError through async
+ * throw/catch boundaries so `fromAsync` can surface it as-is instead of
+ * collapsing every failure to InfrastructureError("UNKNOWN").
+ */
+class DomainErrorCarrier extends Error {
+  readonly schedulingError: SchedulingError;
+
+  constructor(schedulingError: SchedulingError) {
+    super(
+      "message" in schedulingError
+        ? schedulingError.message
+        : schedulingError._tag,
+    );
+    this.name = "DomainErrorCarrier";
+    this.schedulingError = schedulingError;
+  }
+}
+
+/** Throw a typed domain failure (caught and unwrapped by fromAsync). */
+const domainError = (error: SchedulingError): never => {
+  throw new DomainErrorCarrier(error);
+};
+
+/**
+ * Best-effort detection of a PostgreSQL unique-violation (SQLSTATE 23505).
+ * Drivers differ in where they expose the code, so check error, error.cause,
+ * and the message text.
+ */
+const isUniqueViolation = (e: unknown): boolean => {
+  if (e === null || typeof e !== "object") return false;
+  const err = e as { code?: unknown; cause?: unknown; message?: unknown };
+  if (err.code === "23505") return true;
+  const cause = err.cause as { code?: unknown } | undefined;
+  if (cause && cause.code === "23505") return true;
+  const message = typeof err.message === "string" ? err.message : "";
+  return /duplicate key|unique constraint|unique violation/i.test(message);
+};
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -110,7 +166,8 @@ export const createHomegrownAdapter = (
   const interval = config.slotInterval ?? 30;
   const buffer = config.bufferMinutes ?? 0;
   const minAdvance = config.minAdvanceHours ?? 2;
-  const practitionerHandle = config.defaultPractitionerHandle ?? "jen";
+  const practitionerHandle = config.defaultPractitionerHandle;
+  const confirmationCodePrefix = config.confirmationCodePrefix;
   let legacySchemasPromise: Promise<HomegrownAdapterSchemas> | undefined;
 
   const withDb = async <T>(fn: (db: any) => Promise<T>): Promise<T> => {
@@ -167,16 +224,24 @@ export const createHomegrownAdapter = (
   // Helpers
   // ---------------------------------------------------------------------------
 
-  /** Wrap an async operation in Effect */
+  /**
+   * Wrap an async operation in Effect.
+   *
+   * Known domain failures thrown via `domainError` surface as their typed
+   * SchedulingError variants; everything else stays mapped to
+   * InfrastructureError("UNKNOWN").
+   */
   const fromAsync = <A>(fn: () => Promise<A>): SchedulingResult<A> =>
     Effect.tryPromise({
       try: fn,
-      catch: (e) =>
-        Errors.infrastructure(
+      catch: (e) => {
+        if (e instanceof DomainErrorCarrier) return e.schedulingError;
+        return Errors.infrastructure(
           "UNKNOWN",
           e instanceof Error ? e.message : "Unknown error",
           e instanceof Error ? e : undefined,
-        ),
+        );
+      },
     });
 
   /** Resolve a service by UUID or acuityId */
@@ -337,8 +402,16 @@ export const createHomegrownAdapter = (
     });
   };
 
-  /** Get the default practitioner */
+  /** Get the default practitioner (requires defaultPractitionerHandle). */
   const getDefaultPractitioner = async (): Promise<any> => {
+    if (!practitionerHandle) {
+      return domainError(
+        Errors.validation(
+          "defaultPractitionerHandle",
+          "No default practitioner handle configured. Set HomegrownAdapterConfig.defaultPractitionerHandle to the handle of your practice's default practitioner.",
+        ),
+      );
+    }
     const { practitioners } = (await loadSchemas()).content;
     const { eq } = await import("drizzle-orm");
     return withDb(async (d) => {
@@ -366,7 +439,15 @@ export const createHomegrownAdapter = (
       .where(eq(bookingsTable.id, bookingId))
       .limit(1);
 
-    if (!row) throw new Error(`Booking ${bookingId} not found`);
+    if (!row) {
+      return domainError(
+        Errors.validation(
+          "bookingId",
+          `Booking ${bookingId} not found`,
+          bookingId,
+        ),
+      );
+    }
 
     const [svc] = await d
       .select()
@@ -453,7 +534,15 @@ export const createHomegrownAdapter = (
     getService: (serviceId: string) =>
       fromAsync(async () => {
         const row = await resolveService(serviceId);
-        if (!row) throw new Error(`Service ${serviceId} not found`);
+        if (!row) {
+          return domainError(
+            Errors.validation(
+              "serviceId",
+              `Service ${serviceId} not found`,
+              serviceId,
+            ),
+          );
+        }
 
         return {
           id: row.id,
@@ -497,7 +586,15 @@ export const createHomegrownAdapter = (
             .limit(1),
         );
 
-        if (!row) throw new Error(`Provider ${providerId} not found`);
+        if (!row) {
+          return domainError(
+            Errors.validation(
+              "providerId",
+              `Provider ${providerId} not found`,
+              providerId,
+            ),
+          );
+        }
 
         return {
           id: row.id,
@@ -522,7 +619,15 @@ export const createHomegrownAdapter = (
         const occupied = await loadOccupied(params.startDate, params.endDate);
 
         const svc = await resolveService(params.serviceId);
-        if (!svc) throw new Error(`Service ${params.serviceId} not found`);
+        if (!svc) {
+          return domainError(
+            Errors.validation(
+              "serviceId",
+              `Service ${params.serviceId} not found`,
+              params.serviceId,
+            ),
+          );
+        }
 
         const slotConfig: SlotConfig = {
           duration: svc.durationMinutes,
@@ -557,7 +662,15 @@ export const createHomegrownAdapter = (
         const occupied = await loadOccupied(params.date, params.date);
 
         const svc = await resolveService(params.serviceId);
-        if (!svc) throw new Error(`Service ${params.serviceId} not found`);
+        if (!svc) {
+          return domainError(
+            Errors.validation(
+              "serviceId",
+              `Service ${params.serviceId} not found`,
+              params.serviceId,
+            ),
+          );
+        }
 
         const slotConfig: SlotConfig = {
           duration: svc.durationMinutes,
@@ -595,7 +708,15 @@ export const createHomegrownAdapter = (
         const occupied = await loadOccupied(date, date);
 
         const svc = await resolveService(params.serviceId);
-        if (!svc) throw new Error(`Service ${params.serviceId} not found`);
+        if (!svc) {
+          return domainError(
+            Errors.validation(
+              "serviceId",
+              `Service ${params.serviceId} not found`,
+              params.serviceId,
+            ),
+          );
+        }
 
         return isSlotAvailable(params.datetime, dayHours, override, occupied, {
           duration: svc.durationMinutes,
@@ -653,10 +774,40 @@ export const createHomegrownAdapter = (
     createBooking: (request: BookingRequest) =>
       fromAsync(async () => {
         const { bookings: bookingsTable } = (await loadSchemas()).booking;
+        const { eq } = await import("drizzle-orm");
+
+        /**
+         * Look up an existing booking by idempotency key inside the scoped
+         * executor and return the fully mapped Booking on hit.
+         */
+        const findByIdempotencyKey = (): Promise<Booking | null> =>
+          withDb(async (d) => {
+            const [existing] = await d
+              .select()
+              .from(bookingsTable)
+              .where(eq(bookingsTable.idempotencyKey, request.idempotencyKey))
+              .limit(1);
+            return existing ? loadBookingById(d, existing.id) : null;
+          });
+
+        // Idempotent replay: a duplicate submit with the same key returns the
+        // original booking instead of inserting a second row.
+        if (request.idempotencyKey) {
+          const replay = await findByIdempotencyKey();
+          if (replay) return replay;
+        }
 
         // Resolve service (by UUID or acuityId)
         const svc = await resolveService(request.serviceId);
-        if (!svc) throw new Error(`Service ${request.serviceId} not found`);
+        if (!svc) {
+          return domainError(
+            Errors.validation(
+              "serviceId",
+              `Service ${request.serviceId} not found`,
+              request.serviceId,
+            ),
+          );
+        }
 
         // Find or create client
         const clientResult = await Effect.runPromise(
@@ -671,27 +822,43 @@ export const createHomegrownAdapter = (
         const endDt = new Date(
           startDt.getTime() + svc.durationMinutes * 60_000,
         );
-        const confirmationCode = generateConfirmationCode();
-
-        const [row] = await withDb<any[]>((d) =>
-          d
-            .insert(bookingsTable)
-            .values({
-              confirmationCode,
-              serviceId: svc.id,
-              practitionerId: prac?.id,
-              clientId,
-              datetime: startDt.toISOString(),
-              endTime: endDt.toISOString(),
-              duration: svc.durationMinutes,
-              status: "confirmed",
-              paymentStatus: "pending",
-              paymentMethod: request.paymentMethod ?? null,
-              amountCents: svc.priceCents,
-              idempotencyKey: request.idempotencyKey,
-            })
-            .returning(),
+        const confirmationCode = generateConfirmationCode(
+          confirmationCodePrefix,
         );
+
+        let row: any;
+        try {
+          [row] = await withDb<any[]>((d) =>
+            d
+              .insert(bookingsTable)
+              .values({
+                confirmationCode,
+                serviceId: svc.id,
+                practitionerId: prac?.id,
+                clientId,
+                datetime: startDt.toISOString(),
+                endTime: endDt.toISOString(),
+                duration: svc.durationMinutes,
+                status: "confirmed",
+                paymentStatus: "pending",
+                paymentMethod: request.paymentMethod ?? null,
+                amountCents: svc.priceCents,
+                idempotencyKey: request.idempotencyKey,
+              })
+              .returning(),
+          );
+        } catch (e) {
+          // Concurrent duplicate submit: if the underlying table enforces a
+          // unique index on idempotency_key (schema is owned by the schema
+          // package, not this kit), a race between the pre-insert lookup and
+          // the insert surfaces as a unique violation. Recover by replaying
+          // the winning row.
+          if (request.idempotencyKey && isUniqueViolation(e)) {
+            const replay = await findByIdempotencyKey();
+            if (replay) return replay;
+          }
+          throw e;
+        }
 
         return {
           id: row.id,
@@ -776,7 +943,15 @@ export const createHomegrownAdapter = (
             .where(eq(bookingsTable.id, bookingId))
             .limit(1);
 
-          if (!row) throw new Error(`Booking ${bookingId} not found`);
+          if (!row) {
+            return domainError(
+              Errors.validation(
+                "bookingId",
+                `Booking ${bookingId} not found`,
+                bookingId,
+              ),
+            );
+          }
 
           const newStart = new Date(newDatetime);
           const newEnd = new Date(newStart.getTime() + row.duration * 60_000);
