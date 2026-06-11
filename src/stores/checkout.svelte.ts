@@ -4,6 +4,7 @@
  */
 
 import { getContext, setContext } from 'svelte';
+import { toPublicPaymentMethodId } from '../payments/types.js';
 import type {
   CheckoutStep,
   CheckoutState,
@@ -183,7 +184,9 @@ export const createCheckoutStore = (): CheckoutStore => {
     },
 
     selectPaymentMethod(method: string) {
-      paymentMethod = method;
+      // Selector state always holds the canonical public id ('card', never
+      // the internal 'stripe' adapter name).
+      paymentMethod = toPublicPaymentMethodId(method);
       step = 'confirm';
     },
 
