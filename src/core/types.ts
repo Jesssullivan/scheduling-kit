@@ -232,6 +232,15 @@ export interface Booking {
   readonly confirmationCode?: string;
   readonly paymentStatus: PaymentStatus;
   readonly paymentRef?: string;
+  /**
+   * Payment processor / adapter name, when the backend stores it as a
+   * structured field (the homegrown adapter persists it in its own
+   * `paymentMethod` column alongside the bare transaction id in
+   * `paymentRef`). Backends that can only persist one freeform string
+   * (Acuity) leave this unset and encode the processor inside `paymentRef`
+   * via the canonical wire format instead.
+   */
+  readonly paymentMethod?: string;
   readonly createdAt: string;
 }
 

@@ -447,11 +447,14 @@ describe('cancelBookingWithRefund', () => {
     expect(paymentAdapter.refund).not.toHaveBeenCalled();
   });
 
-  it('fails with typed ValidationError for a raw (unformatted) payment ref', async () => {
+  it('fails with typed ValidationError for a raw payment ref with no structured paymentMethod', async () => {
+    // No wire format AND no structured processor field — there is nothing to
+    // route the refund with, so the operation is refused before mutation.
     vi.mocked(scheduler.getBooking).mockReturnValue(
       Effect.succeed(
         createBooking({
           paymentRef: 'pi_3MtwBwLkdIwHu7ix28a3tqPa',
+          paymentMethod: undefined,
         })
       )
     );
@@ -463,6 +466,71 @@ describe('cancelBookingWithRefund', () => {
 
     expect(error._tag === 'ValidationError' && error.value).toBe('pi_3MtwBwLkdIwHu7ix28a3tqPa');
     expect(scheduler.cancelBooking).not.toHaveBeenCalled();
+  });
+
+  it('refunds via the structured paymentMethod when the stored ref is a raw transaction id', async () => {
+    // The homegrown adapter never writes the wire format: it stores the bare
+    // transaction id in paymentRef and the processor in its own
+    // paymentMethod column. This is the steady state for every paid booking
+    // the kit's own happy path creates on a homegrown backend.
+    vi.mocked(scheduler.getBooking).mockReturnValue(
+      Effect.succeed(
+        createBooking({
+          paymentRef: 'txn_homegrown_1',
+          paymentMethod: 'cash',
+        })
+      )
+    );
+
+    const result = await expectSuccess(
+      cancelBookingWithRefund(ctx, { bookingId: '100001', refund: true })
+    );
+
+    expect(result.cancelled).toBe(true);
+    expect(result.refund?.success).toBe(true);
+    expect(paymentAdapter.refund).toHaveBeenCalledWith(
+      expect.objectContaining({ transactionId: 'txn_homegrown_1' })
+    );
+  });
+
+  it('keeps the soft refund failure when the structured paymentMethod has no registered adapter', async () => {
+    vi.mocked(scheduler.getBooking).mockReturnValue(
+      Effect.succeed(
+        createBooking({
+          paymentRef: 'txn_homegrown_2',
+          paymentMethod: 'venmo',
+        })
+      )
+    );
+
+    const result = await expectSuccess(
+      cancelBookingWithRefund(ctx, { bookingId: '100001', refund: true })
+    );
+
+    expect(result.cancelled).toBe(true);
+    expect(result.refund?.success).toBe(false);
+    expect(paymentAdapter.refund).not.toHaveBeenCalled();
+  });
+
+  it('prefers the wire-format ref over the structured paymentMethod when both resolve', async () => {
+    vi.mocked(scheduler.getBooking).mockReturnValue(
+      Effect.succeed(
+        createBooking({
+          paymentRef: '[CASH] Transaction: cash_55',
+          paymentMethod: 'venmo',
+        })
+      )
+    );
+
+    const result = await expectSuccess(
+      cancelBookingWithRefund(ctx, { bookingId: '100001', refund: true })
+    );
+
+    expect(result.cancelled).toBe(true);
+    expect(result.refund?.success).toBe(true);
+    expect(paymentAdapter.refund).toHaveBeenCalledWith(
+      expect.objectContaining({ transactionId: 'cash_55' })
+    );
   });
 
   it('still cancels a booking with an unparseable ref when no refund is requested', async () => {

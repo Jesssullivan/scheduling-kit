@@ -21,6 +21,7 @@ import type { PaymentAdapter, PaymentRegistry as CanonicalPaymentRegistry } from
 import { createPaymentRegistry } from '../payments/types.js';
 import { z } from 'zod';
 import { parsePaymentRef } from './payment-ref.js';
+import type { PaymentReference } from './payment-ref.js';
 
 // =============================================================================
 // VALIDATION SCHEMAS
@@ -273,14 +274,23 @@ export interface CancellationResult {
  * Cancel booking with optional refund
  *
  * Refund semantics: when `refund: true` and the booking carries a
- * `paymentRef`, the reference is decoded with the canonical codec BEFORE any
- * state is mutated. An unparseable reference fails the whole pipeline with a
- * typed `ValidationError` (field `'paymentRef'`) and the booking is left
- * uncancelled — previously this cancelled the booking and silently reported
+ * `paymentRef`, the reference is resolved BEFORE any state is mutated:
+ *
+ * 1. The canonical codec decodes the `[PROCESSOR] Transaction: <id>` wire
+ *    format (what Acuity-backed bookings store).
+ * 2. If the string does not parse and the backend surfaced the processor as
+ *    a structured field (`booking.paymentMethod` — the homegrown adapter
+ *    stores the bare transaction id in `paymentRef` and the processor in its
+ *    own column), the refund is routed with
+ *    `{ processor: booking.paymentMethod, transactionId: booking.paymentRef }`.
+ *
+ * Only when neither resolves does the pipeline fail with a typed
+ * `ValidationError` (field `'paymentRef'`), leaving the booking uncancelled —
+ * previously this cancelled the booking and silently reported
  * `refund.success: false`. Callers that want to cancel anyway can retry with
- * `refund: false`. A reference that parses to a processor with no registered
- * adapter keeps the legacy soft behavior (`refund.success: false`), since the
- * stored data itself is intact.
+ * `refund: false`. A reference that resolves to a processor with no
+ * registered adapter keeps the legacy soft behavior
+ * (`refund.success: false`), since the stored data itself is intact.
  */
 export const cancelBookingWithRefund = (
   ctx: PipelineContext,
@@ -291,10 +301,25 @@ export const cancelBookingWithRefund = (
   return Effect.gen(function* () {
     const booking = yield* scheduler.getBooking(input.bookingId);
 
-    // Decode the payment reference up front so a refund we cannot honor
-    // refuses the operation before the booking is cancelled.
+    // Resolve the payment reference up front so a refund we cannot honor
+    // refuses the operation before the booking is cancelled. Backends that
+    // store the reference structurally (homegrown) never wrote the wire
+    // format, so a failed parse falls back to their structured halves.
+    const storedRef = booking.paymentRef;
+    const structuredFallback: PaymentReference | undefined =
+      storedRef && booking.paymentMethod
+        ? { processor: booking.paymentMethod, transactionId: storedRef }
+        : undefined;
+
     const paymentRef =
-      input.refund && booking.paymentRef ? yield* parsePaymentRef(booking.paymentRef) : undefined;
+      input.refund && storedRef
+        ? yield* pipe(
+            parsePaymentRef(storedRef),
+            Effect.catchAll((parseError) =>
+              structuredFallback ? Effect.succeed(structuredFallback) : Effect.fail(parseError)
+            )
+          )
+        : undefined;
 
     yield* scheduler.cancelBooking(input.bookingId, input.reason);
 
@@ -302,8 +327,7 @@ export const cancelBookingWithRefund = (
       return { cancelled: true } satisfies CancellationResult;
     }
 
-    const processor = paymentRef.processor;
-    const paymentAdapter = processor ? payments.get(processor) : undefined;
+    const paymentAdapter = payments.get(paymentRef.processor);
 
     if (!paymentAdapter) {
       return { cancelled: true, refund: { success: false } } satisfies CancellationResult;

@@ -168,6 +168,32 @@ describe('parsePaymentRef — legacy stored strings', () => {
       transactionId: 'cash_77777',
     });
   });
+
+  it('prefers the canonical marker transaction id over stray earlier Transaction: text', () => {
+    // Canonical-first changes the transactionId half too, not just the
+    // processor: the legacy independent scans took the FIRST
+    // 'Transaction: <tok>' anywhere, so this string resolved
+    // {cash, tx_early} — a refund aimed at the wrong transaction. The codec
+    // takes the id bound to the intact marker.
+    expect(
+      parseOk('Client says Transaction: tx_early was declined\n\n[CASH] Transaction: tx_late')
+    ).toEqual({
+      processor: 'cash',
+      transactionId: 'tx_late',
+    });
+  });
+
+  it('prefers a later intact marker over an earlier split marker (both halves change)', () => {
+    // Full extent of the canonical-first deviation: the legacy scans
+    // resolved {cash, cash_9} here; the codec resolves the intact later
+    // marker, changing BOTH the processor and the transaction id. No
+    // production writer emits split markers, so this shape is contrived,
+    // but the preference is pinned deliberately.
+    expect(parseOk('[CASH] paid, Transaction: cash_9\n\n[STRIPE] Transaction: pi_1')).toEqual({
+      processor: 'stripe',
+      transactionId: 'pi_1',
+    });
+  });
 });
 
 // =============================================================================
