@@ -19,6 +19,13 @@ export default defineConfig({
   ],
   test: {
     include: ['tests/e2e/**/*.test.ts'],
+    server: {
+      deps: {
+        // skeleton-svelte ships raw .svelte sources; inline so the svelte
+        // plugin compiles them (needed by Dialog-based drawer tests)
+        inline: ['@skeletonlabs/skeleton-svelte', /@zag-js\//],
+      },
+    },
     environment: 'jsdom',
     globals: true,
     setupFiles: ['src/tests/setup.ts', 'tests/e2e/setup.ts'],

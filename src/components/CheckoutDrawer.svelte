@@ -6,7 +6,7 @@
   import { Effect } from 'effect';
   import type { SchedulingKit } from '../core/pipelines.js';
   import { Errors, type Service, type Provider, type ClientInfo, type AvailableDate, type TimeSlot, type SchedulingError } from '../core/types.js';
-  import type { PaymentMethodOption } from '../payments/types.js';
+  import { toPublicPaymentMethodOption, type PaymentMethodOption } from '../payments/types.js';
   import { createCheckoutStore, setCheckoutContext } from '../stores/checkout.svelte.js';
   import { generateIdempotencyKey } from '../core/utils.js';
   import ServicePicker from './ServicePicker.svelte';
@@ -159,14 +159,8 @@
 
     const methods: PaymentMethodOption[] = [];
     for (const adapter of kit.payments.getAll()) {
-      const config = adapter.getClientConfig();
-      methods.push({
-        id: adapter.name,
-        name: adapter.name,
-        displayName: config.displayName,
-        icon: config.icon,
-        available: true,
-      });
+      // Emit canonical public ids ('card', never internal 'stripe')
+      methods.push(toPublicPaymentMethodOption(adapter));
     }
 
     paymentMethods = methods;

@@ -21,7 +21,12 @@
   import VenmoCheckout from './VenmoCheckout.svelte';
   import StripeCheckout from './StripeCheckout.svelte';
   import type { PaymentCapabilities } from '../payments/types.js';
-  import { getDefaultCapabilities } from '../payments/types.js';
+  import {
+    getDefaultCapabilities,
+    isCardPaymentMethodId,
+    isManualPaymentMethodId,
+    toPublicPaymentMethodId,
+  } from '../payments/types.js';
 
   // =============================================================================
   // TYPES
@@ -226,12 +231,19 @@
   };
 
   const handlePaymentSelect = async (paymentId: string) => {
-    selectedPayment = paymentId;
+    // Selector state always holds the canonical public id ('card', never the
+    // internal 'stripe' adapter name).
+    selectedPayment = toPublicPaymentMethodId(paymentId);
 
     if (paymentId === 'venmo' && capabilities.venmo?.available && onCreatePaymentOrder && onCapturePayment) {
       // Use PayPal SDK flow for Venmo — requires client-side approval
       step = 'venmo-checkout';
-    } else if (paymentId === 'stripe' && capabilities.stripe?.available && onCreateStripeIntent && selectedService) {
+    } else if (paymentId === 'venmo') {
+      // Venmo selected but not available — never fall through to manual completion
+      errorMessage = 'Venmo payments are not available right now.';
+      step = 'error';
+    } else if (isCardPaymentMethodId(paymentId) && capabilities.stripe?.available && onCreateStripeIntent && selectedService) {
+      // Public 'card' (and the legacy 'stripe' alias) -> Stripe Elements flow.
       // Create PaymentIntent server-side, then show Stripe Elements
       step = 'processing';
       try {
@@ -245,8 +257,16 @@
         errorMessage = e instanceof Error ? e.message : 'Failed to initialize payment';
         step = 'error';
       }
-    } else {
+    } else if (isCardPaymentMethodId(paymentId)) {
+      // Card selected but Stripe is unavailable — never fall through to manual completion
+      errorMessage = 'Card payments are not available right now.';
+      step = 'error';
+    } else if (isManualPaymentMethodId(paymentId)) {
+      // Only explicit manual methods may complete in-app
       processCustomPayment(paymentId);
+    } else {
+      errorMessage = 'This payment method is not supported in the current checkout flow.';
+      step = 'error';
     }
   };
 
