@@ -79,7 +79,6 @@ nix build .#docs        # Build the static docs site as a derivation
 nix flake check         # Evaluate flake outputs and run lightweight checks
 ```
 
-
 ## Release Authority
 
 Current reality:
@@ -87,6 +86,8 @@ Current reality:
 - the functional release line is `Jesssullivan/scheduling-kit`
 - `tinyland-inc/scheduling-kit` is now a downstream mirror and validation
   surface, not a second publish authority
+- the active tinyland Bazel registry carries `scheduling-kit` `0.8.0` (and
+  `scheduling-bridge` `0.5.11`); the registry line is already in `.bazelrc`
 
 Treat `Jesssullivan/main` as the release authority for package publication and
 metadata changes. Do not assume both `main` branches are equivalent.
