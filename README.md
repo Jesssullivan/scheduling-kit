@@ -86,6 +86,8 @@ Current reality:
 - the functional release line is `Jesssullivan/scheduling-kit`
 - `tinyland-inc/scheduling-kit` is now a downstream mirror and validation
   surface, not a second publish authority
+- the active tinyland Bazel registry carries `scheduling-kit` `0.8.0` (and
+  `scheduling-bridge` `0.5.11`); the registry line is already in `.bazelrc`
 
 Treat `Jesssullivan/main` as the release authority for package publication and
 metadata changes. Do not assume both `main` branches are equivalent.
@@ -375,12 +377,13 @@ import { CassetteRecorder, CassettePlayer } from '@tummycrypt/scheduling-kit/tes
 ## Development
 
 ```bash
-pnpm install
-pnpm dev              # Start dev server
-pnpm build            # Build package
-pnpm check            # TypeScript check
-pnpm lint             # ESLint
-pnpm test:all         # Run all test suites
+pnpm dev                 # Start dev server
+pnpm build               # Build package
+pnpm check               # TypeScript check
+pnpm lint                # ESLint
+pnpm test:all            # Run all test suites
+pnpm docs:check          # Validate generated docs and MkDocs config
+bazel build //:pkg       # Build npm artifact through Bazel
 ```
 
 ## License
