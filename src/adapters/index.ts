@@ -22,6 +22,20 @@ export {
   type HomegrownContentSchemaTables,
 } from './homegrown.js';
 
+// Recurrence Pre-Pass (TIN-1996 slice 1).
+// RRULE parsing uses the optional peer @tummycrypt/tinyland-calendar,
+// loaded lazily inside expandRecurrence — safe to re-export statically.
+export {
+  expandRecurrence,
+  RecurrencePeerUnavailableError,
+  UnsupportedRecurrenceError,
+  type RecurringHoursRule,
+  type RecurringBlock,
+  type RecurrenceExpansionInput,
+  type RecurrenceExpansionRange,
+  type RecurrenceExpansion,
+} from './recurrence.js';
+
 // Availability Engine (pure functions)
 export {
   getAvailableSlots,

@@ -45,6 +45,9 @@ importers:
       '@tummycrypt/tinyland-auth-pg':
         specifier: ^0.2.4
         version: 0.2.4(@tummycrypt/tinyland-auth@0.2.0(@sveltejs/kit@2.55.0(@sveltejs/vite-plugin-svelte@6.2.4(svelte@5.54.1)(vite@6.4.1(@types/node@20.19.37)))(svelte@5.54.1)(typescript@5.9.3)(vite@6.4.1(@types/node@20.19.37)))(svelte@5.54.1))(@types/pg@8.11.6)
+      '@tummycrypt/tinyland-calendar':
+        specifier: ^0.2.3
+        version: 0.2.3
       '@types/node':
         specifier: ^20.0.0
         version: 20.19.37
@@ -754,6 +757,10 @@ packages:
         optional: true
       svelte:
         optional: true
+
+  '@tummycrypt/tinyland-calendar@0.2.3':
+    resolution: {integrity: sha512-afVYVzTro2p00VuksEUS5e6C5cSJk8W1WFxqFVJiJmGxC5wg8PxxFKIST1m7e0lDnIecrTiHjCkb/n84nPba5w==}
+    engines: {node: '>=22.0.0'}
 
   '@types/aria-query@5.0.4':
     resolution: {integrity: sha512-rfT93uj5s0PRL7EzccGMs3brplhcrghnDoV26NqKhCAS1hVo+WdNsPvE/yb6ilfr5hi2MEk6d5EWJTKdxg8jVw==}
@@ -2908,6 +2915,8 @@ snapshots:
     optionalDependencies:
       '@sveltejs/kit': 2.55.0(@sveltejs/vite-plugin-svelte@6.2.4(svelte@5.54.1)(vite@6.4.1(@types/node@20.19.37)))(svelte@5.54.1)(typescript@5.9.3)(vite@6.4.1(@types/node@20.19.37))
       svelte: 5.54.1
+
+  '@tummycrypt/tinyland-calendar@0.2.3': {}
 
   '@types/aria-query@5.0.4': {}
 
