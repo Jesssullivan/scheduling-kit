@@ -32,7 +32,7 @@ The Bazel module graph is the canonical delivery mechanism. Depend on the
 module through the tinyland Bazel registry:
 
 ```starlark
-bazel_dep(name = "tummycrypt_scheduling_kit", version = "0.9.0")
+bazel_dep(name = "tummycrypt_scheduling_kit", version = "0.9.1")
 ```
 
 with the registry line (already in this repo's `.bazelrc`):
@@ -105,7 +105,7 @@ Current reality:
 - the functional release line is `Jesssullivan/scheduling-kit`
 - `tinyland-inc/scheduling-kit` is now a downstream mirror and validation
   surface, not a second publish authority
-- the active tinyland Bazel registry carries `scheduling-kit` `0.9.0+` (and
+- the active tinyland Bazel registry carries `scheduling-kit` `0.9.1+` (and
   `scheduling-bridge` `0.5.11+`); the registry line is already in `.bazelrc`
 
 Treat `Jesssullivan/main` as the release authority for package publication and
