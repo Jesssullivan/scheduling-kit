@@ -342,6 +342,46 @@ describe('expandRecurrence — input validation', () => {
     ).rejects.toThrow(/YYYY-MM-DD/);
   });
 
+  it('rejects impossible YYYY-MM-DD dates instead of normalizing them', async () => {
+    await expect(
+      expandRecurrence(
+        {
+          hours: [
+            { rrule: 'FREQ=DAILY', dtstart: '2026-02-31', window: WINDOW },
+          ],
+        },
+        JUNE,
+      ),
+    ).rejects.toThrow(/not a valid date/);
+  });
+
+  it('rejects impossible exdates before filtering occurrences', async () => {
+    await expect(
+      expandRecurrence(
+        {
+          hours: [
+            {
+              rrule: 'FREQ=WEEKLY',
+              dtstart: '2026-06-01',
+              window: WINDOW,
+              exdates: ['2026-06-31'],
+            },
+          ],
+        },
+        JUNE,
+      ),
+    ).rejects.toThrow(/not a valid date/);
+  });
+
+  it('rejects impossible date-only range bounds', async () => {
+    await expect(
+      expandRecurrence(
+        { hours: [{ rrule: 'FREQ=DAILY', dtstart: '2026-06-01', window: WINDOW }] },
+        { start: '2026-06-01', end: '2026-06-31' },
+      ),
+    ).rejects.toThrow(/not a valid date/);
+  });
+
   it('rejects non-positive durationMinutes', async () => {
     await expect(
       expandRecurrence(

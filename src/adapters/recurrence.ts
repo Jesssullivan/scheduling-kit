@@ -197,7 +197,7 @@ const parseDateOnly = (value: string, label: string): Date => {
     throw new Error(`${label} must be a YYYY-MM-DD date, got "${value}"`);
   }
   const date = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
-  if (Number.isNaN(date.getTime())) {
+  if (Number.isNaN(date.getTime()) || formatDateOnly(date) !== value) {
     throw new Error(`${label} is not a valid date: "${value}"`);
   }
   return date;
