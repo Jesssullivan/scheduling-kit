@@ -28,9 +28,28 @@ clean shell.
 
 ## Installation
 
-```bash
-pnpm add @tummycrypt/scheduling-kit
+The Bazel module graph is the canonical delivery mechanism. Depend on the
+module through the tinyland Bazel registry:
+
+```starlark
+bazel_dep(name = "tummycrypt_scheduling_kit", version = "0.9.0")
 ```
+
+with the registry line (already in this repo's `.bazelrc`):
+
+```text
+common --registry=https://raw.githubusercontent.com/tinyland-inc/bazel-registry/main
+```
+
+npm-ecosystem consumers outside the Bazel module graph install the derived
+GitHub Packages artifact:
+
+```bash
+pnpm add @jesssullivan/scheduling-kit   # registry: https://npm.pkg.github.com
+```
+
+npmjs (`@tummycrypt/scheduling-kit`) is retired for new versions and frozen at
+`0.8.0`.
 
 ## Development Environment
 
@@ -86,19 +105,25 @@ Current reality:
 - the functional release line is `Jesssullivan/scheduling-kit`
 - `tinyland-inc/scheduling-kit` is now a downstream mirror and validation
   surface, not a second publish authority
-- the active tinyland Bazel registry carries `scheduling-kit` `0.8.0` (and
-  `scheduling-bridge` `0.5.11`); the registry line is already in `.bazelrc`
+- the active tinyland Bazel registry carries `scheduling-kit` `0.9.0+` (and
+  `scheduling-bridge` `0.5.11+`); the registry line is already in `.bazelrc`
 
 Treat `Jesssullivan/main` as the release authority for package publication and
 metadata changes. Do not assume both `main` branches are equivalent.
 
-Longer term, the intended publish shape is:
+The delivery doctrine is:
 
 1. release metadata declared once
 2. Bazel defines and builds the publishable artifact
 3. GitHub Actions validates that artifact on the repo-owned package runner
-4. GitHub Packages is the package publish authority while npmjs publishing is disabled
-5. downstream apps consume the published package only
+4. the Bzlmod module graph via `tinyland-inc/bazel-registry` is the SSOT
+   delivery mechanism
+5. GitHub Packages carries the derived `@jesssullivan/scheduling-kit` package,
+   built from the Bazel `//:pkg` output, for consumers outside the Bazel
+   module graph
+6. npmjs (`@tummycrypt/scheduling-kit`) is retired for new versions and frozen
+   at `0.8.0`; `npm_publish_mode: disabled` is permanent policy
+7. downstream apps consume the published package only
 
 ## Runner Authority
 

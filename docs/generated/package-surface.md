@@ -11,7 +11,7 @@ Generated from `package.json` and the current `src/` tree.
 | Field | Value |
 | --- | --- |
 | Package | `@tummycrypt/scheduling-kit` |
-| Version | `0.8.0` |
+| Version | `0.9.1` |
 | Description | Backend-agnostic scheduling components with alternative payment support |
 | Node range | `>=20 <25` |
 | Repository | https://github.com/Jesssullivan/scheduling-kit.git |
@@ -22,6 +22,7 @@ Generated from `package.json` and the current `src/` tree.
 | --- | --- | --- | --- |
 | `.` | `./dist/index.d.ts` | `./dist/index.js` | `./dist/index.js` |
 | `./adapters` | `./dist/adapters/index.d.ts` | `./dist/adapters/index.js` |  |
+| `./capabilities` | `./dist/capabilities/index.d.ts` | `./dist/capabilities/index.js` |  |
 | `./components` | `./dist/components/index.d.ts` | `./dist/components/index.js` | `./dist/components/index.js` |
 | `./core` | `./dist/core/index.d.ts` | `./dist/core/index.js` |  |
 | `./lib` | `./dist/lib/index.d.ts` | `./dist/lib/index.js` |  |
@@ -37,15 +38,16 @@ Generated from `package.json` and the current `src/` tree.
 | Area | Files | Notes |
 | --- | --- | --- |
 | `src/adapters` | 8 | Scheduling provider integrations and availability helpers |
+| `src/capabilities` | 3 | Repo source area |
 | `src/components` | 13 | Svelte checkout and booking UI |
-| `src/core` | 5 | Effect-powered orchestration, error types, and utilities |
+| `src/core` | 6 | Effect-powered orchestration, error types, and utilities |
 | `src/lib` | 3 | Small reusable helpers and Acuity iframe listener |
 | `src/onboarding` | 11 | Settings-driven onboarding and credential helpers |
-| `src/payments` | 5 | Payment adapters and capability contracts |
+| `src/payments` | 6 | Payment adapters and capability contracts |
 | `src/reconciliation` | 4 | Alternative-payment matching and webhook helpers |
 | `src/stores` | 2 | Svelte runes-based state |
 | `src/testing` | 5 | Cassette recording, replay, and masking utilities |
-| `src/tests` | 37 | Vitest helpers, mocks, fixtures, and unit coverage |
+| `src/tests` | 42 | Vitest helpers, mocks, fixtures, and unit coverage |
 
 ## Script Entry Points
 

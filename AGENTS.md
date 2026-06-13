@@ -38,7 +38,7 @@ The package should be reusable across multiple businesses. Avoid app-specific as
 
 ## Current Tracking
 
-As of `2026-06-10`, release-authority, artifact-truth, and runner-contract
+As of `2026-06-11`, release-authority, artifact-truth, and runner-contract
 convergence have largely landed. The active structural work is docs/toolchain
 truth normalization and the adopter capability contract.
 
@@ -56,8 +56,8 @@ Closed but still relevant context:
 - `TIN-103` closed the release-authority ambiguity for `Jesssullivan/scheduling-kit`
 - `TIN-104` was canceled as a duplicate during that convergence work
 - `TIN-165` is done: the tinyland bazel-registry is generated from standalone
-  package truth and currently carries scheduling-kit `0.8.0` and
-  scheduling-bridge `0.5.11`; the registry line is in `.bazelrc`
+  package truth and currently carries scheduling-kit `0.9.0+` and
+  scheduling-bridge `0.5.11+`; the registry line is in `.bazelrc`
 - `TIN-677` is done: HomegrownAdapter takes injected schemas from
   `@tummycrypt/tinyland-business-pg`, with `tinyland-auth-pg` kept only as an
   optional legacy fallback
@@ -66,8 +66,12 @@ Current operational truth:
 
 - local development should default to `jesssullivan/main`
 - that branch is the current functional release line
-- current published package truth is `@tummycrypt/scheduling-kit` `0.8.0`
-  on GitHub Releases, GitHub Packages, and the active tinyland Bazel registry
+- current released version is `0.9.0`: git tag plus GitHub Release, GitHub
+  Packages `@jesssullivan/scheduling-kit`, and the active tinyland Bazel
+  registry (`0.9.0+`)
+- npmjs `@tummycrypt/scheduling-kit` is retired for new versions and frozen at
+  `0.8.0`; `npm_publish_mode: disabled` is permanent policy, not a temporary
+  outage
 - HomegrownAdapter does not require `tinyland-auth-pg`; schemas are injected
   explicitly (canonically from `@tummycrypt/tinyland-business-pg`) and any
   auth-pg fallback stays optional
@@ -162,12 +166,19 @@ bar.
 
 ### Publishing
 
-Current publish flows target:
+Delivery doctrine:
 
-- npmjs as `@tummycrypt/scheduling-kit`
-- GitHub Packages as `@jesssullivan/scheduling-kit`
+- the Bzlmod module graph through `tinyland-inc/bazel-registry` is the SSOT
+  delivery mechanism
+- GitHub Packages `@jesssullivan/scheduling-kit` is the derived
+  out-of-ecosystem package, built from the Bazel `//:pkg` artifact
+  (`./bazel-bin/pkg`)
+- npmjs `@tummycrypt/scheduling-kit` is retired for new versions and frozen at
+  `0.8.0`; `npm_publish_mode: disabled` is permanent policy, not a temporary
+  outage
 
-That GitHub Packages rename is operationally real. Do not break it
+That GitHub Packages naming split (npm-style identity `@tummycrypt`, GitHub
+Packages scope `@jesssullivan`) is operationally real. Do not break it
 accidentally when editing the publish flow.
 
 Release/publish changes should be made against the functional release line
