@@ -82,6 +82,7 @@
             bazelWrapper
             docsPython
             jdk21_headless
+            just
             nodejs_22
             pnpm
             typescript

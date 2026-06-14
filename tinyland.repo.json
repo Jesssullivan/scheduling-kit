@@ -1,0 +1,48 @@
+{
+	"$schema": "https://raw.githubusercontent.com/tinyland-inc/site.scaffold/main/docs/schemas/tinyland-repo-manifest.schema.json",
+	"schema_version": 1,
+	"repo": {
+		"name": "scheduling-kit",
+		"github": "Jesssullivan/scheduling-kit",
+		"description": "Backend-agnostic, headless scheduling library with pluggable adapters, payment processors, and Svelte UI; published from the Bazel //:pkg artifact.",
+		"linear": {
+			"initiative": "TIN-89",
+			"issue": "TIN-2110"
+		}
+	},
+	"taxonomy": {
+		"primary_role": "package-producer",
+		"layers": ["org-wide-repo-contract", "bazel-package-cache-rbe"]
+	},
+	"contracts": {
+		"agent_contract": "AGENTS.md",
+		"just": "justfile",
+		"nix": "flake.nix",
+		"github_actions": ".github/workflows",
+		"secrets_scan": "none",
+		"conformance": "nix develop --command just cache-contract-strict"
+	},
+	"boundaries": {
+		"owns_runtime_backend": false,
+		"owns_auth": false,
+		"owns_payments": false,
+		"owns_activitypub_delivery": false,
+		"owns_live_broker_fetch": false,
+		"owns_static_projection_ingest": false,
+		"owns_gitops_apply": false,
+		"owns_cloudflare_mutation": false,
+		"owns_bazel_module_authority": true
+	},
+	"authorities": {
+		"ci_templates": "tinyland-inc/ci-templates",
+		"cache_rbe_authority": "tinyland-inc/GloriousFlywheel",
+		"package_registry": "tinyland-inc/bazel-registry"
+	},
+	"supply_chain": {
+		"sbom": {
+			"status": "not-required",
+			"formats": ["CycloneDX JSON"],
+			"notes": "scheduling-kit enrollment dimensions (TIN-2110 pilot): forge scope = Jesssullivan personal account; operator overlay = jesssullivan-infra; execution pool = tinyland-nix (in-cluster ARC); substrate mode = shared-cache-backed (cache-first, TIN-1997 Option D). The Bazel cache endpoint is injected at runtime by the in-cluster nix-setup (never baked); enrollment is self-verified via scripts/cache-attachment-contract.sh --strict. Cache-first only: no remote executor / REAPI lane is wired."
+		}
+	}
+}
