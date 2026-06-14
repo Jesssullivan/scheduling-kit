@@ -53,3 +53,6 @@ export * from './stores/index.js';
 
 // Reconciliation (alt-payment matching)
 export * from './reconciliation/index.js';
+
+// Backend-agnostic fuzzy-in matcher primitives
+export * from './fuzzy/index.js';

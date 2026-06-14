@@ -31,6 +31,10 @@
       "types": "./dist/capabilities/index.d.ts",
       "default": "./dist/capabilities/index.js"
     },
+    "./fuzzy": {
+      "types": "./dist/fuzzy/index.d.ts",
+      "default": "./dist/fuzzy/index.js"
+    },
     "./recurrence": {
       "types": "./dist/adapters/recurrence.d.ts",
       "default": "./dist/adapters/recurrence.js"
