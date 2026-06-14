@@ -11,7 +11,7 @@ Generated from `package.json` and the current `src/` tree.
 | Field | Value |
 | --- | --- |
 | Package | `@tummycrypt/scheduling-kit` |
-| Version | `0.9.1` |
+| Version | `0.9.2` |
 | Description | Backend-agnostic scheduling components with alternative payment support |
 | Node range | `>=20 <25` |
 | Repository | https://github.com/Jesssullivan/scheduling-kit.git |
@@ -25,11 +25,13 @@ Generated from `package.json` and the current `src/` tree.
 | `./capabilities` | `./dist/capabilities/index.d.ts` | `./dist/capabilities/index.js` |  |
 | `./components` | `./dist/components/index.d.ts` | `./dist/components/index.js` | `./dist/components/index.js` |
 | `./core` | `./dist/core/index.d.ts` | `./dist/core/index.js` |  |
+| `./fuzzy` | `./dist/fuzzy/index.d.ts` | `./dist/fuzzy/index.js` |  |
 | `./lib` | `./dist/lib/index.d.ts` | `./dist/lib/index.js` |  |
 | `./onboarding` | `./dist/onboarding/index.d.ts` | `./dist/onboarding/index.js` |  |
 | `./payments` | `./dist/payments/index.d.ts` | `./dist/payments/index.js` |  |
 | `./payments/types` | `./dist/payments/types.d.ts` | `./dist/payments/types.js` |  |
 | `./reconciliation` | `./dist/reconciliation/index.d.ts` | `./dist/reconciliation/index.js` |  |
+| `./recurrence` | `./dist/adapters/recurrence.d.ts` | `./dist/adapters/recurrence.js` |  |
 | `./stores` | `./dist/stores/index.d.ts` | `./dist/stores/index.js` | `./dist/stores/index.js` |
 | `./testing` | `./dist/testing/index.d.ts` | `./dist/testing/index.js` |  |
 
@@ -37,10 +39,11 @@ Generated from `package.json` and the current `src/` tree.
 
 | Area | Files | Notes |
 | --- | --- | --- |
-| `src/adapters` | 8 | Scheduling provider integrations and availability helpers |
+| `src/adapters` | 10 | Scheduling provider integrations and availability helpers |
 | `src/capabilities` | 3 | Repo source area |
 | `src/components` | 13 | Svelte checkout and booking UI |
 | `src/core` | 6 | Effect-powered orchestration, error types, and utilities |
+| `src/fuzzy` | 7 | Repo source area |
 | `src/lib` | 3 | Small reusable helpers and Acuity iframe listener |
 | `src/onboarding` | 11 | Settings-driven onboarding and credential helpers |
 | `src/payments` | 6 | Payment adapters and capability contracts |

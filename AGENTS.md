@@ -56,7 +56,7 @@ Closed but still relevant context:
 - `TIN-103` closed the release-authority ambiguity for `Jesssullivan/scheduling-kit`
 - `TIN-104` was canceled as a duplicate during that convergence work
 - `TIN-165` is done: the tinyland bazel-registry is generated from standalone
-  package truth and currently carries scheduling-kit `0.9.1+` and
+  package truth and currently carries scheduling-kit `0.9.2+` and
   scheduling-bridge `0.5.11+`; the registry line is in `.bazelrc`
 - `TIN-677` is done: HomegrownAdapter takes injected schemas from
   `@tummycrypt/tinyland-business-pg`, with `tinyland-auth-pg` kept only as an
@@ -66,9 +66,9 @@ Current operational truth:
 
 - local development should default to `jesssullivan/main`
 - that branch is the current functional release line
-- current released version is `0.9.1`: git tag plus GitHub Release, GitHub
+- current released version is `0.9.2`: git tag plus GitHub Release, GitHub
   Packages `@jesssullivan/scheduling-kit`, and the active tinyland Bazel
-  registry (`0.9.1+`)
+  registry (`0.9.2+`)
 - npmjs `@tummycrypt/scheduling-kit` is retired for new versions and frozen at
   `0.8.0`; `npm_publish_mode: disabled` is permanent policy, not a temporary
   outage
