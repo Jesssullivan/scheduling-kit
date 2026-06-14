@@ -35,8 +35,13 @@ const scalar = (value) =>
 		.replace(/^(['"])(.*)\1\s*(?:#.*)?$/, '$2')
 		.replace(/\s+#.*$/, '')
 		.trim();
+// An acceptable pin is either a 40-char commit SHA or an immutable semver
+// release tag (e.g. @v2.3.0). The ci-templates README rule is to pin to an
+// immutable release tag; a floating branch ref such as @main is not a valid
+// pin. Both forms are accepted so kit can converge off the bare-commit pin
+// onto the immutable v-tag (TIN-2110) without re-introducing pin debt.
 const usesPinnedPackageWorkflow = (workflow) =>
-	/uses:\s*tinyland-inc\/ci-templates\/\.github\/workflows\/js-bazel-package\.yml@[0-9a-fA-F]{40}/.test(
+	/uses:\s*tinyland-inc\/ci-templates\/\.github\/workflows\/js-bazel-package\.yml@(?:[0-9a-fA-F]{40}|v[0-9]+\.[0-9]+\.[0-9]+)\b/.test(
 		workflow,
 	);
 const hasWorkflowConcurrency = (workflow) => /\nconcurrency:\n/.test(workflow);
