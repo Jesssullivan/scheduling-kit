@@ -50,10 +50,19 @@ export {
 } from './caldav-busy.js';
 
 // Availability substrate (TIN-1996 slice 2): RRULE windows minus busy.
+// Snapshot freshness attribution (TIN-945 row 3): observedAt/staleAt/expiresAt
+// + cold-read cost, wrapping the substrate read for cache-reuse decisions.
 export {
   getSubstrateAvailability,
+  getAvailabilitySnapshot,
+  isSnapshotStale,
+  isSnapshotExpired,
+  isSnapshotReusable,
   type AvailabilitySubstrate,
   type SubstrateDayAvailability,
+  type AvailabilitySnapshot,
+  type AvailabilityFreshness,
+  type SnapshotFreshnessPolicy,
 } from './availability-substrate.js';
 
 // Availability Engine (pure functions)
