@@ -1,0 +1,242 @@
+{
+  "version": "1.0",
+  "name": "idempotency-replay",
+  "createdAt": "2026-04-18T09:00:00.000Z",
+  "updatedAt": "2026-04-18T09:00:00.000Z",
+  "environment": {
+    "nodeVersion": "v20.0.0",
+    "platform": "linux",
+    "timezone": "UTC",
+    "tags": ["idempotency", "booking", "offline"]
+  },
+  "config": {
+    "services": ["scheduling"],
+    "maskedFields": ["email", "firstName", "lastName", "phone", "authorization"],
+    "mode": "replay"
+  },
+  "entries": [
+    {
+      "id": "e1-replay-lookup-hit",
+      "recordedAt": "2026-04-18T09:01:00.000Z",
+      "duration": 0,
+      "metadata": {
+        "scenario": "duplicate-key",
+        "role": "idempotency-pre-lookup",
+        "outcome": "hit"
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.scheduling.test/v1/bookings?idempotencyKey=idem-replay-9f",
+        "headers": {
+          "accept": "application/json",
+          "authorization": "[MASKED_AUTHORIZATION]"
+        }
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "headers": { "content-type": "application/json" },
+        "body": "{\"results\":[{\"id\":\"bk_replay_777\",\"serviceId\":\"svc_massage_60\",\"serviceName\":\"Therapeutic Massage 60\",\"datetime\":\"2026-04-20T14:00:00.000Z\",\"endTime\":\"2026-04-20T15:00:00.000Z\",\"duration\":60,\"price\":120,\"currency\":\"USD\",\"status\":\"confirmed\",\"confirmationCode\":\"RPL-777A\",\"paymentStatus\":\"paid\",\"idempotencyKey\":\"idem-replay-9f\",\"client\":{\"firstName\":\"[MASKED_FIRSTNAME]\",\"lastName\":\"[MASKED_LASTNAME]\",\"email\":\"[MASKED_EMAIL]\"},\"createdAt\":\"2026-04-18T09:00:30.000Z\"}]}"
+      }
+    },
+    {
+      "id": "e2-replay-canonical-insert",
+      "recordedAt": "2026-04-18T09:00:30.000Z",
+      "duration": 0,
+      "metadata": {
+        "scenario": "duplicate-key",
+        "role": "canonical-insert",
+        "note": "The single insert that originally created bk_replay_777. Present so the cassette records exactly one insert for idem-replay-9f; a duplicate submission must never replay this entry."
+      },
+      "request": {
+        "method": "POST",
+        "url": "https://api.scheduling.test/v1/bookings?idempotencyKey=idem-replay-9f",
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "[MASKED_AUTHORIZATION]"
+        },
+        "body": "{\"serviceId\":\"svc_massage_60\",\"datetime\":\"2026-04-20T14:00:00.000Z\",\"idempotencyKey\":\"idem-replay-9f\",\"client\":{\"firstName\":\"[MASKED_FIRSTNAME]\",\"lastName\":\"[MASKED_LASTNAME]\",\"email\":\"[MASKED_EMAIL]\"}}"
+      },
+      "response": {
+        "status": 201,
+        "statusText": "Created",
+        "headers": { "content-type": "application/json" },
+        "body": "{\"id\":\"bk_replay_777\",\"serviceId\":\"svc_massage_60\",\"serviceName\":\"Therapeutic Massage 60\",\"datetime\":\"2026-04-20T14:00:00.000Z\",\"endTime\":\"2026-04-20T15:00:00.000Z\",\"duration\":60,\"price\":120,\"currency\":\"USD\",\"status\":\"confirmed\",\"confirmationCode\":\"RPL-777A\",\"paymentStatus\":\"paid\",\"idempotencyKey\":\"idem-replay-9f\",\"client\":{\"firstName\":\"[MASKED_FIRSTNAME]\",\"lastName\":\"[MASKED_LASTNAME]\",\"email\":\"[MASKED_EMAIL]\"},\"createdAt\":\"2026-04-18T09:00:30.000Z\"}"
+      }
+    },
+    {
+      "id": "e3-fresh-lookup-miss",
+      "recordedAt": "2026-04-18T09:02:00.000Z",
+      "duration": 0,
+      "metadata": {
+        "scenario": "fresh-key",
+        "role": "idempotency-pre-lookup",
+        "outcome": "miss"
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.scheduling.test/v1/bookings?idempotencyKey=idem-fresh-3a",
+        "headers": {
+          "accept": "application/json",
+          "authorization": "[MASKED_AUTHORIZATION]"
+        }
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "headers": { "content-type": "application/json" },
+        "body": "{\"results\":[]}"
+      }
+    },
+    {
+      "id": "e4-fresh-insert",
+      "recordedAt": "2026-04-18T09:02:01.000Z",
+      "duration": 0,
+      "metadata": {
+        "scenario": "fresh-key",
+        "role": "insert",
+        "outcome": "created"
+      },
+      "request": {
+        "method": "POST",
+        "url": "https://api.scheduling.test/v1/bookings?idempotencyKey=idem-fresh-3a",
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "[MASKED_AUTHORIZATION]"
+        },
+        "body": "{\"serviceId\":\"svc_massage_60\",\"datetime\":\"2026-04-21T18:00:00.000Z\",\"idempotencyKey\":\"idem-fresh-3a\",\"client\":{\"firstName\":\"[MASKED_FIRSTNAME]\",\"lastName\":\"[MASKED_LASTNAME]\",\"email\":\"[MASKED_EMAIL]\"}}"
+      },
+      "response": {
+        "status": 201,
+        "statusText": "Created",
+        "headers": { "content-type": "application/json" },
+        "body": "{\"id\":\"bk_fresh_778\",\"serviceId\":\"svc_massage_60\",\"serviceName\":\"Therapeutic Massage 60\",\"datetime\":\"2026-04-21T18:00:00.000Z\",\"endTime\":\"2026-04-21T19:00:00.000Z\",\"duration\":60,\"price\":120,\"currency\":\"USD\",\"status\":\"confirmed\",\"confirmationCode\":\"FSH-778B\",\"paymentStatus\":\"paid\",\"idempotencyKey\":\"idem-fresh-3a\",\"client\":{\"firstName\":\"[MASKED_FIRSTNAME]\",\"lastName\":\"[MASKED_LASTNAME]\",\"email\":\"[MASKED_EMAIL]\"},\"createdAt\":\"2026-04-18T09:02:01.000Z\"}"
+      }
+    },
+    {
+      "id": "e5-passthrough-insert-a",
+      "recordedAt": "2026-04-18T09:03:00.000Z",
+      "duration": 0,
+      "metadata": {
+        "scenario": "no-key-passthrough",
+        "role": "insert",
+        "outcome": "created"
+      },
+      "request": {
+        "method": "POST",
+        "url": "https://api.scheduling.test/v1/bookings?ref=walkin-1420",
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "[MASKED_AUTHORIZATION]"
+        },
+        "body": "{\"serviceId\":\"svc_massage_60\",\"datetime\":\"2026-04-22T14:00:00.000Z\",\"client\":{\"firstName\":\"[MASKED_FIRSTNAME]\",\"lastName\":\"[MASKED_LASTNAME]\",\"email\":\"[MASKED_EMAIL]\"}}"
+      },
+      "response": {
+        "status": 201,
+        "statusText": "Created",
+        "headers": { "content-type": "application/json" },
+        "body": "{\"id\":\"bk_pass_a_101\",\"serviceId\":\"svc_massage_60\",\"serviceName\":\"Therapeutic Massage 60\",\"datetime\":\"2026-04-22T14:00:00.000Z\",\"endTime\":\"2026-04-22T15:00:00.000Z\",\"duration\":60,\"price\":120,\"currency\":\"USD\",\"status\":\"confirmed\",\"confirmationCode\":\"WLK-101C\",\"paymentStatus\":\"paid\",\"client\":{\"firstName\":\"[MASKED_FIRSTNAME]\",\"lastName\":\"[MASKED_LASTNAME]\",\"email\":\"[MASKED_EMAIL]\"},\"createdAt\":\"2026-04-18T09:03:00.000Z\"}"
+      }
+    },
+    {
+      "id": "e6-passthrough-insert-b",
+      "recordedAt": "2026-04-18T09:03:05.000Z",
+      "duration": 0,
+      "metadata": {
+        "scenario": "no-key-passthrough",
+        "role": "insert",
+        "outcome": "created"
+      },
+      "request": {
+        "method": "POST",
+        "url": "https://api.scheduling.test/v1/bookings?ref=walkin-1500",
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "[MASKED_AUTHORIZATION]"
+        },
+        "body": "{\"serviceId\":\"svc_massage_60\",\"datetime\":\"2026-04-22T15:00:00.000Z\",\"client\":{\"firstName\":\"[MASKED_FIRSTNAME]\",\"lastName\":\"[MASKED_LASTNAME]\",\"email\":\"[MASKED_EMAIL]\"}}"
+      },
+      "response": {
+        "status": 201,
+        "statusText": "Created",
+        "headers": { "content-type": "application/json" },
+        "body": "{\"id\":\"bk_pass_b_202\",\"serviceId\":\"svc_massage_60\",\"serviceName\":\"Therapeutic Massage 60\",\"datetime\":\"2026-04-22T15:00:00.000Z\",\"endTime\":\"2026-04-22T16:00:00.000Z\",\"duration\":60,\"price\":120,\"currency\":\"USD\",\"status\":\"confirmed\",\"confirmationCode\":\"WLK-202D\",\"paymentStatus\":\"paid\",\"client\":{\"firstName\":\"[MASKED_FIRSTNAME]\",\"lastName\":\"[MASKED_LASTNAME]\",\"email\":\"[MASKED_EMAIL]\"},\"createdAt\":\"2026-04-18T09:03:05.000Z\"}"
+      }
+    },
+    {
+      "id": "e7-race-lookup-miss",
+      "recordedAt": "2026-04-18T09:04:00.000Z",
+      "duration": 0,
+      "metadata": {
+        "scenario": "unique-violation-race",
+        "role": "idempotency-pre-lookup",
+        "outcome": "miss"
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.scheduling.test/v1/bookings?idempotencyKey=idem-race-7c",
+        "headers": {
+          "accept": "application/json",
+          "authorization": "[MASKED_AUTHORIZATION]"
+        }
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "headers": { "content-type": "application/json" },
+        "body": "{\"results\":[]}"
+      }
+    },
+    {
+      "id": "e8-race-insert-conflict",
+      "recordedAt": "2026-04-18T09:04:01.000Z",
+      "duration": 0,
+      "metadata": {
+        "scenario": "unique-violation-race",
+        "role": "insert",
+        "outcome": "conflict",
+        "note": "Concurrent request won the unique idempotency index (Postgres 23505); our insert loses."
+      },
+      "request": {
+        "method": "POST",
+        "url": "https://api.scheduling.test/v1/bookings?idempotencyKey=idem-race-7c",
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "[MASKED_AUTHORIZATION]"
+        },
+        "body": "{\"serviceId\":\"svc_massage_60\",\"datetime\":\"2026-04-23T16:00:00.000Z\",\"idempotencyKey\":\"idem-race-7c\",\"client\":{\"firstName\":\"[MASKED_FIRSTNAME]\",\"lastName\":\"[MASKED_LASTNAME]\",\"email\":\"[MASKED_EMAIL]\"}}"
+      },
+      "response": {
+        "status": 409,
+        "statusText": "Conflict",
+        "headers": { "content-type": "application/json" },
+        "body": "{\"error\":\"idempotency_conflict\",\"code\":\"23505\",\"constraint\":\"bookings_idempotency_key_key\",\"message\":\"duplicate key value violates unique constraint\"}"
+      }
+    },
+    {
+      "id": "e9-race-replay-lookup-hit",
+      "recordedAt": "2026-04-18T09:04:02.000Z",
+      "duration": 0,
+      "metadata": {
+        "scenario": "unique-violation-race",
+        "role": "replay-lookup",
+        "outcome": "hit",
+        "note": "Post-conflict replay lookup returns the row the winning concurrent request inserted."
+      },
+      "request": {
+        "method": "GET",
+        "url": "https://api.scheduling.test/v1/bookings/replay?idempotencyKey=idem-race-7c",
+        "headers": {
+          "accept": "application/json",
+          "authorization": "[MASKED_AUTHORIZATION]"
+        }
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "headers": { "content-type": "application/json" },
+        "body": "{\"results\":[{\"id\":\"bk_race_909\",\"serviceId\":\"svc_massage_60\",\"serviceName\":\"Therapeutic Massage 60\",\"datetime\":\"2026-04-23T16:00:00.000Z\",\"endTime\":\"2026-04-23T17:00:00.000Z\",\"duration\":60,\"price\":120,\"currency\":\"USD\",\"status\":\"confirmed\",\"confirmationCode\":\"RCE-909E\",\"paymentStatus\":\"paid\",\"idempotencyKey\":\"idem-race-7c\",\"client\":{\"firstName\":\"[MASKED_FIRSTNAME]\",\"lastName\":\"[MASKED_LASTNAME]\",\"email\":\"[MASKED_EMAIL]\"},\"createdAt\":\"2026-04-18T09:04:00.500Z\"}]}"
+      }
+    }
+  ]
+}
