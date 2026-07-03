@@ -11,7 +11,7 @@ Generated from `package.json` and the current `src/` tree.
 | Field | Value |
 | --- | --- |
 | Package | `@tummycrypt/scheduling-kit` |
-| Version | `0.9.2` |
+| Version | `0.10.0` |
 | Description | Backend-agnostic scheduling components with alternative payment support |
 | Node range | `>=20 <25` |
 | Repository | https://github.com/Jesssullivan/scheduling-kit.git |
@@ -41,7 +41,7 @@ Generated from `package.json` and the current `src/` tree.
 
 | Area | Files | Notes |
 | --- | --- | --- |
-| `src/adapters` | 14 | Scheduling provider integrations and availability helpers |
+| `src/adapters` | 15 | Scheduling provider integrations and availability helpers |
 | `src/capabilities` | 3 | Repo source area |
 | `src/components` | 13 | Svelte checkout and booking UI |
 | `src/core` | 6 | Effect-powered orchestration, error types, and utilities |
