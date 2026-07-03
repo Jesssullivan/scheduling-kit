@@ -142,6 +142,17 @@ describe('busyBlocksFromEvents — all-day events (DATE-valued DTSTART)', () => 
     ]);
   });
 
+  it('rejects an all-day event whose dtend equals dtstart (never silently under-blocks the day)', async () => {
+    // RFC 5545 §3.8.2.2 requires DTEND strictly after a DATE-valued DTSTART;
+    // producers emitting this malformation mean "busy all day".
+    await expect(
+      busyBlocksFromEvents(
+        [{ uid: 'bad-allday', dtstart: '2026-06-03', dtend: '2026-06-03' }],
+        JUNE_1_TO_5,
+      ),
+    ).rejects.toThrow(/DTEND strictly after DTSTART/);
+  });
+
   it('treats a DATE-valued dtend as exclusive per RFC 5545', async () => {
     const blocks = await busyBlocksFromEvents(
       [{ dtstart: '2026-06-03', dtend: '2026-06-05' }],
@@ -309,6 +320,23 @@ describe('loadCalDavClient — optional peer @tummycrypt/tinyland-caldav-client'
       /pnpm add @tummycrypt\/tinyland-caldav-client/,
     );
     expect((error as Error).message).toMatch(/Cause: /);
+  });
+
+  it('does not mislabel constructor errors as peer-unavailable', async () => {
+    vi.resetModules();
+    vi.doMock('@tummycrypt/tinyland-caldav-client', () => ({
+      CalendarClient: class {
+        constructor() {
+          throw new Error('bad baseUrl');
+        }
+      },
+    }));
+    const mod = await import('../caldav-busy.js');
+
+    const error = await mod.loadCalDavClient('::garbage::').catch((e: unknown) => e);
+
+    expect((error as Error).message).toBe('bad baseUrl');
+    expect((error as Error).name).not.toBe('CalDavPeerUnavailableError');
   });
 
   it('exposes the typed error class on the public surface', () => {

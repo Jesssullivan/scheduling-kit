@@ -34,7 +34,11 @@
  * - A DATE-valued (all-day) `DTSTART` with no `DTEND` blocks the whole
  *   calendar day — local to `timezone` when set, UTC otherwise.
  * - A DATE-valued `DTEND` is exclusive (the block ends at local midnight of
- *   that date).
+ *   that date). An all-day event whose interval collapses to zero
+ *   (`DTEND` equal to `DTSTART` — invalid per RFC 5545 §3.8.2.2, which
+ *   requires DTEND strictly after DTSTART) fails loud: producers emitting
+ *   that malformation mean "busy all day", so silently blocking nothing
+ *   would under-block a full day.
  * - Recurring durations are minute-precision (`Math.ceil`), matching the
  *   expander's `RecurringBlock.durationMinutes` contract; all-day recurring
  *   events use a fixed 24h/day duration, so occurrences that cross a DST
@@ -131,12 +135,15 @@ export class CalDavPeerUnavailableError extends Error {
 export const loadCalDavClient = async (
   baseUrl?: string,
 ): Promise<CalDavBusySource> => {
+  let mod: typeof import('@tummycrypt/tinyland-caldav-client');
   try {
-    const mod = await import('@tummycrypt/tinyland-caldav-client');
-    return new mod.CalendarClient(baseUrl);
+    mod = await import('@tummycrypt/tinyland-caldav-client');
   } catch (error) {
     throw new CalDavPeerUnavailableError(error);
   }
+  // Construction errors (e.g. a bad baseUrl) propagate as-is — they are not
+  // peer-availability problems and must not be mislabeled as such.
+  return new mod.CalendarClient(baseUrl);
 };
 
 // ---------------------------------------------------------------------------
@@ -231,7 +238,20 @@ const eventInterval = (event: CalDavBusyEvent): EventInterval | undefined => {
       `${label} ends before it starts (dtstart ${event.dtstart}, dtend ${event.dtend})`,
     );
   }
-  if (end.getTime() === start.getTime()) return undefined;
+  if (end.getTime() === start.getTime()) {
+    if (allDay) {
+      // RFC 5545 §3.8.2.2: DTEND MUST be strictly after a DATE-valued
+      // DTSTART. Producers emitting DTEND == DTSTART mean "busy all day";
+      // silently blocking nothing would under-block a full day.
+      throw new Error(
+        `${label} is all-day (DATE-valued dtstart ${event.dtstart}) but its ` +
+          `interval is zero-length (dtend ${event.dtend}); RFC 5545 requires ` +
+          `an exclusive DTEND strictly after DTSTART — use dtend ` +
+          `${nextDateStr(event.dtstart)} to block the day`,
+      );
+    }
+    return undefined; // DATE-TIME zero-duration: valid per RFC, blocks nothing
+  }
 
   return { start, end };
 };
