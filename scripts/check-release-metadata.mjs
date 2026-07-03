@@ -231,6 +231,31 @@ const checks = [
 	},
 ];
 
+// In-house Bzlmod/npm parity (TIN-1996, per the TIN-2035 delivery doctrine):
+// every tummycrypt_* bazel_dep must be mirrored by an exact-version
+// devDependency on the corresponding @tummycrypt npm package. The lockfile
+// drives Bazel's npm_translate_lock, so a range here would let the Bzlmod
+// module graph and the npm graph resolve different versions.
+//
+// Fail-closed against reformatting: each bazel_dep(...) call is matched as a
+// whole (any formatting, including buildifier multi-line with trailing
+// commas); a tummycrypt_* dep whose version attribute cannot be extracted
+// surfaces as a mismatch instead of silently skipping the check.
+const npmNameFromModule = (moduleName) =>
+	`@tummycrypt/${moduleName.replace(/^tummycrypt_/, '').replaceAll('_', '-')}`;
+for (const [call] of moduleBazel.matchAll(/bazel_dep\s*\([^)]*\)/g)) {
+	const moduleName = /(?<![\w.])name\s*=\s*"(tummycrypt_[a-z0-9_]+)"/.exec(
+		call,
+	)?.[1];
+	if (!moduleName) continue;
+	const moduleVersion = /(?<![\w.])version\s*=\s*"([^"]+)"/.exec(call)?.[1];
+	checks.push({
+		label: `in-house npm parity for ${moduleName}`,
+		actual: packageJson.devDependencies?.[npmNameFromModule(moduleName)],
+		expected: moduleVersion,
+	});
+}
+
 const failures = checks.filter((check) => check.actual !== check.expected);
 
 if (failures.length > 0) {

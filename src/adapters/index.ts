@@ -36,6 +36,26 @@ export {
   type RecurrenceExpansion,
 } from './recurrence.js';
 
+// CalDAV busy overlay (TIN-1996 slice 2).
+// Event conversion is peer-free; only loadCalDavClient touches the optional
+// peer @tummycrypt/tinyland-caldav-client (lazily) — safe to re-export.
+export {
+  busyBlocksFromEvents,
+  fetchCalDavBusy,
+  loadCalDavClient,
+  CalDavPeerUnavailableError,
+  type CalDavBusyEvent,
+  type CalDavBusyQuery,
+  type CalDavBusySource,
+} from './caldav-busy.js';
+
+// Availability substrate (TIN-1996 slice 2): RRULE windows minus busy.
+export {
+  getSubstrateAvailability,
+  type AvailabilitySubstrate,
+  type SubstrateDayAvailability,
+} from './availability-substrate.js';
+
 // Availability Engine (pure functions)
 export {
   getAvailableSlots,

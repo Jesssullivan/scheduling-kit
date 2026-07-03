@@ -35,6 +35,20 @@ bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
 
 # =============================================================================
+# Inter-module dependencies (tinyland-inc/bazel-registry)
+# =============================================================================
+# Availability substrate (TIN-1996): kit is the first consumer of the
+# tinyland-calendar (RRULE recurrence) and tinyland-caldav-client (external
+# calendar busy overlay) registry modules. npm parity per the TIN-2035
+# delivery doctrine: each bazel_dep below is mirrored by an exact-version
+# @tummycrypt devDependency in package.json (enforced by
+# scripts/check-release-metadata.mjs), so the Bzlmod graph and the
+# pnpm-lock-translated npm graph resolve identical versions.
+
+bazel_dep(name = "tummycrypt_tinyland_calendar", version = "0.2.3")
+bazel_dep(name = "tummycrypt_tinyland_caldav_client", version = "0.2.3")
+
+# =============================================================================
 # JavaScript / TypeScript toolchain (Aspect Build)
 # =============================================================================
 
