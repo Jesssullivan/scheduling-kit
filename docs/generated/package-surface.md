@@ -22,6 +22,8 @@ Generated from `package.json` and the current `src/` tree.
 | --- | --- | --- | --- |
 | `.` | `./dist/index.d.ts` | `./dist/index.js` | `./dist/index.js` |
 | `./adapters` | `./dist/adapters/index.d.ts` | `./dist/adapters/index.js` |  |
+| `./availability` | `./dist/adapters/availability-substrate.d.ts` | `./dist/adapters/availability-substrate.js` |  |
+| `./caldav` | `./dist/adapters/caldav-busy.d.ts` | `./dist/adapters/caldav-busy.js` |  |
 | `./capabilities` | `./dist/capabilities/index.d.ts` | `./dist/capabilities/index.js` |  |
 | `./components` | `./dist/components/index.d.ts` | `./dist/components/index.js` | `./dist/components/index.js` |
 | `./core` | `./dist/core/index.d.ts` | `./dist/core/index.js` |  |
@@ -39,7 +41,7 @@ Generated from `package.json` and the current `src/` tree.
 
 | Area | Files | Notes |
 | --- | --- | --- |
-| `src/adapters` | 10 | Scheduling provider integrations and availability helpers |
+| `src/adapters` | 14 | Scheduling provider integrations and availability helpers |
 | `src/capabilities` | 3 | Repo source area |
 | `src/components` | 13 | Svelte checkout and booking UI |
 | `src/core` | 6 | Effect-powered orchestration, error types, and utilities |
