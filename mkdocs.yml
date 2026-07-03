@@ -47,6 +47,7 @@ nav:
   - Build & Release: build-and-release.md
   - Testing: testing.md
   - Tracing: tracing.md
+  - Parity Matrix: parity-matrix.md
   - Generated:
       - Package Surface: generated/package-surface.md
       - Release Metadata: generated/release-metadata.md
