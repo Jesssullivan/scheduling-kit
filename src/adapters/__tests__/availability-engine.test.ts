@@ -14,6 +14,8 @@ import {
   getEffectiveHours,
   hasOverlap,
   parseTimeInTz,
+  occupiedDayBoundsUtc,
+  toDateString,
   type HoursWindow,
   type HoursOverride,
   type OccupiedBlock,
@@ -433,6 +435,60 @@ describe('parseTimeInTz', () => {
 // ---------------------------------------------------------------------------
 // Edge cases
 // ---------------------------------------------------------------------------
+
+describe('occupiedDayBoundsUtc', () => {
+  it('bounds a summer (EDT, UTC-4) date at local midnight, not UTC midnight', () => {
+    const { startIso, endExclusiveIso } = occupiedDayBoundsUtc(
+      '2026-04-20',
+      '2026-04-20',
+      'America/New_York',
+    );
+    expect(startIso).toBe('2026-04-20T04:00:00.000Z');
+    expect(endExclusiveIso).toBe('2026-04-21T04:00:00.000Z');
+    // The old naive bounds used the UTC day directly.
+    expect(startIso).not.toBe('2026-04-20T00:00:00Z');
+  });
+
+  it('bounds a winter (EST, UTC-5) date at local midnight', () => {
+    const { startIso, endExclusiveIso } = occupiedDayBoundsUtc(
+      '2026-01-15',
+      '2026-01-15',
+      'America/New_York',
+    );
+    expect(startIso).toBe('2026-01-15T05:00:00.000Z');
+    expect(endExclusiveIso).toBe('2026-01-16T05:00:00.000Z');
+  });
+
+  it('keeps an evening ET booking inside its local date window across the UTC boundary (regression)', () => {
+    // 2026-04-20 21:00 America/New_York (EDT) is stored as 2026-04-21T01:00Z,
+    // the next UTC day. Its local date is still 2026-04-20, and the tz-aware
+    // window for that date must contain it. The old UTC-day upper bound
+    // (2026-04-20T23:59:59Z) dropped it, enabling a double booking.
+    const eveningUtc = '2026-04-21T01:00:00.000Z';
+    expect(toDateString(eveningUtc, 'America/New_York')).toBe('2026-04-20');
+
+    const { startIso, endExclusiveIso } = occupiedDayBoundsUtc(
+      '2026-04-20',
+      '2026-04-20',
+      'America/New_York',
+    );
+    const t = new Date(eveningUtc).getTime();
+    expect(t).toBeGreaterThanOrEqual(new Date(startIso).getTime());
+    expect(t).toBeLessThan(new Date(endExclusiveIso).getTime());
+    // Proof the old bound would have excluded it.
+    expect(t).toBeGreaterThan(new Date('2026-04-20T23:59:59Z').getTime());
+  });
+
+  it('spans a multi-day range from the first local midnight to the day after the last', () => {
+    const { startIso, endExclusiveIso } = occupiedDayBoundsUtc(
+      '2026-04-20',
+      '2026-04-22',
+      'America/New_York',
+    );
+    expect(startIso).toBe('2026-04-20T04:00:00.000Z');
+    expect(endExclusiveIso).toBe('2026-04-23T04:00:00.000Z');
+  });
+});
 
 describe('edge cases', () => {
   it('handles 0-minute duration gracefully', () => {
