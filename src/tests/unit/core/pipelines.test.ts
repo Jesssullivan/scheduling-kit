@@ -245,6 +245,51 @@ describe('completeBookingWithAltPayment', () => {
     }
   });
 
+  it('stops before payment when atomic soft-hold acquisition reports SLOT_TAKEN', async () => {
+    vi.mocked(scheduler.softHoldSlot).mockReturnValue(
+      Effect.fail(
+        Errors.reservation(
+          'SLOT_TAKEN',
+          'Another checkout already holds this slot',
+          input.request.datetime,
+        ),
+      ),
+    );
+
+    const error = await expectFailureTag(
+      completeBookingWithAltPayment(ctx, input),
+      'ReservationError',
+    );
+
+    expect(error).toMatchObject({ code: 'SLOT_TAKEN' });
+    expect(paymentAdapter.createIntent).not.toHaveBeenCalled();
+    expect(paymentAdapter.capturePayment).not.toHaveBeenCalled();
+    expect(scheduler.createBookingWithPaymentRef).not.toHaveBeenCalled();
+  });
+
+  it('injects only the hold acquired by the pipeline into the booking write', async () => {
+    const requestWithForeignHold = {
+      ...input.request,
+      softHoldId: 'caller-supplied-hold',
+    };
+
+    await expectSuccess(
+      completeBookingWithAltPayment(ctx, {
+        ...input,
+        request: requestWithForeignHold,
+      }),
+    );
+
+    expect(scheduler.createBookingWithPaymentRef).toHaveBeenCalledWith(
+      expect.objectContaining({ softHoldId: '99999' }),
+      expect.any(String),
+      expect.any(String),
+    );
+    const bookingRequest = vi.mocked(scheduler.createBookingWithPaymentRef)
+      .mock.calls[0][0] as typeof requestWithForeignHold;
+    expect(bookingRequest.softHoldId).not.toBe('caller-supplied-hold');
+  });
+
   it('releases soft hold on payment intent failure', async () => {
     vi.mocked(paymentAdapter.createIntent).mockReturnValue(
       Effect.fail(Errors.payment('INTENT_FAILED', 'Failed to create intent', 'cash'))

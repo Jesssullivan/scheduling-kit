@@ -82,19 +82,22 @@ export interface HomegrownAdapterConfig {
   /**
    * Optional transaction runner for the slot-validating write paths.
    *
-   * When provided, createBooking and rescheduleBooking run their
+   * When provided, softHoldSlot, createBooking, and rescheduleBooking run their
    * read-validate-write critical section inside this callback so the
    * availability re-check and the insert/update are one atomic unit, and a
    * practitioner-day Postgres advisory lock (pg_advisory_xact_lock) can
    * serialize concurrent writers for the same practitioner + local calendar
    * day, including writers targeting overlapping but different start times.
-   * Supply `(fn) => db.transaction(fn)`.
+   * This also makes soft-hold acquisition a pre-payment admission gate: two
+   * checkouts cannot both acquire a hold for one slot. Supply
+   * `(fn) => db.transaction(fn)`.
    *
    * When omitted, those paths fall back to withDb and the atomicity of the
    * critical section then depends entirely on the semantics of the consumer's
-   * withDb: a bare passthrough gives none, so two concurrent writers can still
-   * double-book the same slot. Provide withTransaction in production Postgres
-   * deployments; the two-writer integration test only closes the race with it.
+   * withDb: a bare passthrough gives none, so two concurrent checkouts can both
+   * acquire holds and two concurrent writers can still double-book the same
+   * slot. Provide withTransaction in production Postgres deployments; the
+   * concurrency integration tests only close these races with it.
    *
    * Scope of the additive change: supplying withTransaction is additive for the
    * advisory lock only. Omitting it disables the lock (concurrent writers are no
@@ -229,6 +232,13 @@ export const createHomegrownAdapter = (
   // from any other pg_advisory_xact_lock users sharing the connection.
   const SLOT_LOCK_NAMESPACE = 0x5343;
 
+  /** Advance a YYYY-MM-DD key by one calendar day without timezone drift. */
+  const nextDayKey = (dayKey: string): string => {
+    const date = new Date(`${dayKey}T00:00:00.000Z`);
+    date.setUTCDate(date.getUTCDate() + 1);
+    return date.toISOString().slice(0, 10);
+  };
+
   /**
    * Derive a signed 32-bit key (pg int4) for a resource + local day
    * (YYYY-MM-DD) via FNV-1a. Concurrent writers targeting the same
@@ -269,21 +279,16 @@ export const createHomegrownAdapter = (
     endIso: string,
   ): Promise<void> => {
     const { sql } = await import("drizzle-orm");
-    const bufferedStart = new Date(new Date(startIso).getTime() - buffer * 60_000);
+    const bufferedStart = new Date(
+      new Date(startIso).getTime() - buffer * 60_000,
+    );
     const bufferedEnd = new Date(new Date(endIso).getTime() + buffer * 60_000);
-    const dayKeys = new Set<string>();
-    // Walk the padded interval in 24h steps (plus the endpoint) so every
-    // local date it touches is covered regardless of span length.
-    for (
-      let t = bufferedStart.getTime();
-      t < bufferedEnd.getTime();
-      t += 24 * 60 * 60_000
-    ) {
-      dayKeys.add(toDateString(new Date(t).toISOString(), tz));
-    }
-    dayKeys.add(toDateString(bufferedEnd.toISOString(), tz));
-    // ISO YYYY-MM-DD sorts lexicographically == chronologically.
-    for (const day of [...dayKeys].sort()) {
+    const firstDay = toDateString(bufferedStart.toISOString(), tz);
+    const lastDay = toDateString(bufferedEnd.toISOString(), tz);
+    // Walk calendar-day keys, not fixed 24-hour UTC jumps. A spring-forward
+    // transition makes a local day 23 hours and can otherwise skip a date for
+    // long services or buffers.
+    for (let day = firstDay; day <= lastDay; day = nextDayKey(day)) {
       await d.execute(
         sql`select pg_advisory_xact_lock(${SLOT_LOCK_NAMESPACE}::int4, ${advisoryLockKey(
           resource,
@@ -459,22 +464,23 @@ export const createHomegrownAdapter = (
    *
    * @param excludeBookingId - booking id to omit; a reschedule must not treat
    *   the booking being moved as a conflict with itself.
-   * @param excludeHoldId - soft-hold id to omit; a booking completing a held
-   *   checkout must not treat the caller's own hold as a conflict.
+   * @param excludeHold - exact soft-hold capability to omit; a booking
+   *   completing a held checkout must not treat its own matching hold as a
+   *   conflict, while a stale or unrelated id remains occupied.
    */
   const loadOccupiedWith = async (
     d: any,
     startDate: string,
     endDate: string,
     excludeBookingId?: string,
-    excludeHoldId?: string,
+    excludeHold?: { id: string; datetime: string; duration: number },
   ): Promise<OccupiedBlock[]> => {
     const {
       bookings: bookingsTable,
       timeBlocks,
       slotReservations,
     } = (await loadSchemas()).booking;
-    const { gte, lt, and, ne, isNull, gt } = await import("drizzle-orm");
+    const { lt, and, eq, ne, not, isNull, gt } = await import("drizzle-orm");
 
     const { startIso, endExclusiveIso } = occupiedDayBoundsUtc(
       startDate,
@@ -513,17 +519,28 @@ export const createHomegrownAdapter = (
         ),
       );
 
-    // Active soft holds (not expired, not released). Reservations carry no end
-    // column, so they are matched by start instant within the tz-correct
-    // window rather than by interval overlap.
+    // Active soft holds (not expired, not released). Reservations carry their
+    // duration separately, so query every active hold that starts before the
+    // window ends and perform the end-time overlap check in memory. A lower
+    // start bound would miss a hold that begins before the window and runs
+    // into it.
     const holdConds = [
-      gte(slotReservations.datetime, startIso),
       lt(slotReservations.datetime, endExclusiveIso),
       gt(slotReservations.expiresAt, new Date().toISOString()),
       isNull(slotReservations.releasedAt),
     ];
-    if (excludeHoldId) {
-      holdConds.push(ne(slotReservations.id, excludeHoldId));
+    if (excludeHold) {
+      // Treat the opaque id as a capability only for the exact candidate it
+      // represents. A stale or unrelated id must not suppress another hold.
+      holdConds.push(
+        not(
+          and(
+            eq(slotReservations.id, excludeHold.id),
+            eq(slotReservations.datetime, excludeHold.datetime),
+            eq(slotReservations.duration, excludeHold.duration),
+          )!,
+        ),
+      );
     }
     const softHoldRows = await d
       .select({
@@ -580,17 +597,30 @@ export const createHomegrownAdapter = (
     excludeBookingId?: string,
     excludeHoldId?: string,
   ): Promise<void> => {
-    const startDate = toDateString(startIso, tz);
-    const endDate = toDateString(endIso, tz);
+    const bufferedStart = new Date(
+      new Date(startIso).getTime() - buffer * 60_000,
+    );
+    const bufferedEnd = new Date(new Date(endIso).getTime() + buffer * 60_000);
+    // Query every local day touched by the same padded interval used for the
+    // overlap check. Using the unbuffered dates misses adjacent rows across
+    // local midnight that conflict only because of the configured buffer.
+    const startDate = toDateString(bufferedStart.toISOString(), tz);
+    const endDate = toDateString(bufferedEnd.toISOString(), tz);
     const occupied = await loadOccupiedWith(
       d,
       startDate,
       endDate,
       excludeBookingId,
-      excludeHoldId,
+      excludeHoldId
+        ? {
+            id: excludeHoldId,
+            datetime: new Date(startIso).toISOString(),
+            duration:
+              (new Date(endIso).getTime() - new Date(startIso).getTime()) /
+              60_000,
+          }
+        : undefined,
     );
-    const bufferedStart = new Date(new Date(startIso).getTime() - buffer * 60_000);
-    const bufferedEnd = new Date(new Date(endIso).getTime() + buffer * 60_000);
     if (hasOverlap(bufferedStart, bufferedEnd, occupied)) {
       domainError(
         Errors.reservation(
@@ -934,20 +964,44 @@ export const createHomegrownAdapter = (
       fromAsync(async () => {
         const { slotReservations } = (await loadSchemas()).booking;
         const expirationMinutes = params.expirationMinutes ?? 10;
-        const expiresAt = new Date(
-          Date.now() + expirationMinutes * 60_000,
-        ).toISOString();
+        const start = new Date(params.datetime);
+        const end = new Date(start.getTime() + params.duration * 60_000);
+        // Homegrown booking writes currently resolve the configured default
+        // practitioner, so use that same row id for the lock even when a
+        // caller supplied provider metadata on the advisory hold.
+        const lockResource = transactional
+          ? ((await getDefaultPractitioner())?.id ?? "default")
+          : "default";
 
-        const [row] = await withDb<any[]>((d) =>
-          d
+        const row = await runInTransaction(async (d) => {
+          // A hold is the pre-payment admission gate. Serialize it with other
+          // holds and booking writes for the same practitioner-day so two
+          // checkouts cannot both acquire a hold and charge for one slot.
+          if (transactional) {
+            await acquireSlotLocks(
+              d,
+              lockResource,
+              start.toISOString(),
+              end.toISOString(),
+            );
+          }
+          await assertSlotOpen(d, start.toISOString(), end.toISOString());
+          // Start the hold lifetime only after any lock contention and the
+          // final availability check. Otherwise a blocked checkout could
+          // insert a hold that is already expired when it is returned.
+          const expiresAt = new Date(
+            Date.now() + expirationMinutes * 60_000,
+          ).toISOString();
+          const [inserted] = await d
             .insert(slotReservations)
             .values({
-              datetime: params.datetime,
+              datetime: start.toISOString(),
               duration: params.duration,
               expiresAt,
             })
-            .returning(),
-        );
+            .returning();
+          return inserted;
+        });
 
         return {
           id: row.id,

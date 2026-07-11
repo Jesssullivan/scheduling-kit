@@ -42,7 +42,6 @@ const BookingRequestSchema = z.object({
   client: ClientInfoSchema,
   paymentMethod: z.string().optional(),
   idempotencyKey: z.string().min(1),
-  softHoldId: z.string().optional(),
 });
 
 // =============================================================================
@@ -129,7 +128,11 @@ export const completeBookingWithAltPayment = (
         notes: `Payment pending: ${request.idempotencyKey}`,
       }),
       Effect.map((r) => r as SlotSoftHold | undefined),
-      Effect.catchAll(() => Effect.succeed(undefined as SlotSoftHold | undefined)),
+      Effect.catchAll((error) =>
+        error._tag === 'ReservationError' && error.code === 'SLOT_TAKEN'
+          ? Effect.fail(error)
+          : Effect.succeed(undefined as SlotSoftHold | undefined),
+      ),
     );
 
     // Phase C: Process payment (release soft hold on failure)
@@ -158,9 +161,14 @@ export const completeBookingWithAltPayment = (
     // Phase D: Create booking (refund + release soft hold on failure).
     // Thread the caller's own hold id so the write-time slot gate does not
     // count the Phase B hold as a conflict and fail every held booking.
+    // softHoldId is internal pipeline metadata. Discard any same-named value
+    // supplied by a caller and inject only the hold acquired in Phase B.
+    const { softHoldId: _callerSoftHoldId, ...bookingRequest } = request;
+    const requestWithHold: BookingRequest =
+      softHold ? { ...bookingRequest, softHoldId: softHold.id } : bookingRequest;
     const booking = yield* pipe(
       scheduler.createBookingWithPaymentRef(
-        softHold ? { ...request, softHoldId: softHold.id } : request,
+        requestWithHold,
         payment.transactionId,
         paymentAdapter.name,
       ),

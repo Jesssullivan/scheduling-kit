@@ -27,7 +27,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import { Effect } from 'effect';
+import { Cause, Effect, Option } from 'effect';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { sql } from 'drizzle-orm';
 import {
@@ -256,10 +256,10 @@ suite('HomegrownAdapter concurrency against real Postgres', () => {
   const SLOT = '2026-04-20T14:00:00.000Z';
   // Far-future fixed Monday 10:00 America/New_York (14:00Z in EDT), so the
   // pipeline's business-hours + min-advance checks pass deterministically.
-  const PIPELINE_SLOT = '2027-04-19T14:00:00.000Z';
+  const PIPELINE_SLOT = '2099-04-20T14:00:00.000Z';
   // Starts 60 min into PIPELINE_SLOT's 120-min interval: overlapping but a
   // DIFFERENT start time, so exact-start lock keys would not contend.
-  const OVERLAP_SLOT = '2027-04-19T15:00:00.000Z';
+  const OVERLAP_SLOT = '2099-04-20T15:00:00.000Z';
   const HANDLE = 'alex';
 
   const buildAdapter = () =>
@@ -398,6 +398,37 @@ suite('HomegrownAdapter concurrency against real Postgres', () => {
     expect(rows).toHaveLength(1);
   }, 30000);
 
+  it('lets exactly one of two concurrent soft holds for the same slot win before payment', async () => {
+    const adapter = buildAdapter();
+    const hold = () =>
+      adapter.softHoldSlot({
+        serviceId,
+        datetime: PIPELINE_SLOT,
+        duration: 60,
+      });
+
+    const exits = await Promise.all([
+      Effect.runPromiseExit(hold()),
+      Effect.runPromiseExit(hold()),
+    ]);
+
+    expect(exits.filter((exit) => exit._tag === 'Success')).toHaveLength(1);
+    const failures = exits.filter((exit) => exit._tag === 'Failure');
+    expect(failures).toHaveLength(1);
+    const failure = Cause.failureOption(failures[0].cause);
+    expect(Option.isSome(failure)).toBe(true);
+    expect(Option.getOrThrow(failure)).toMatchObject({
+      _tag: 'ReservationError',
+      code: 'SLOT_TAKEN',
+    });
+
+    const rows = await db
+      .select({ id: slotReservations.id })
+      .from(slotReservations)
+      .where(sql`${slotReservations.datetime} = ${PIPELINE_SLOT}`);
+    expect(rows).toHaveLength(1);
+  }, 30000);
+
   // TIN-2764 regression (revenue path): the checkout pipeline places its own
   // advisory soft hold in Phase B, charges in Phase C, and creates the booking
   // in Phase D. Pre-fix, Phase D's write-time gate counted the caller's OWN
@@ -529,7 +560,7 @@ suite('HomegrownAdapter concurrency against real Postgres', () => {
       .select({ id: bookings.id })
       .from(bookings)
       .where(
-        sql`${bookings.datetime} < '2027-04-19T16:00:00.000Z' AND ${bookings.endTime} > '2027-04-19T14:00:00.000Z'`,
+        sql`${bookings.datetime} < '2099-04-20T16:00:00.000Z' AND ${bookings.endTime} > '2099-04-20T14:00:00.000Z'`,
       );
     expect(rows).toHaveLength(1);
   }, 30000);
