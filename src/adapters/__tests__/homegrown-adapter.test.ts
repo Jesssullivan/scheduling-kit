@@ -91,6 +91,11 @@ vi.mock("drizzle-orm", () => ({
   lt: (col: string, val: unknown) => ({ op: "lt", col, val }),
   gt: (col: string, val: unknown) => ({ op: "gt", col, val }),
   isNull: (col: string) => ({ op: "isNull", col }),
+  not: (arg: unknown) => ({ op: "not", arg }),
+  sql: (strings: TemplateStringsArray, ...values: unknown[]) => ({
+    strings,
+    values,
+  }),
 }));
 
 // ---------------------------------------------------------------------------
@@ -107,7 +112,8 @@ type MockRow = Record<string, unknown>;
  * `.orderBy(...)`. An `Error` entry rejects on either path.
  */
 const selectTerminal = (entry: MockRow[] | Error) => {
-  const p = entry instanceof Error ? Promise.reject(entry) : Promise.resolve(entry);
+  const p =
+    entry instanceof Error ? Promise.reject(entry) : Promise.resolve(entry);
   // Suppress unhandled-rejection noise on the branch that is never awaited.
   p.catch(() => {});
   const settle =
@@ -199,11 +205,9 @@ const createSequencedMockDb = (
   };
 
   return {
-    select: vi
-      .fn()
-      .mockImplementation(() => ({
-        from: vi.fn().mockImplementation(makeSelectChain),
-      })),
+    select: vi.fn().mockImplementation(() => ({
+      from: vi.fn().mockImplementation(makeSelectChain),
+    })),
     insert: vi.fn().mockImplementation(makeInsertChain),
     update: vi.fn().mockReturnValue({
       set: vi.fn().mockReturnValue({
@@ -561,7 +565,10 @@ describe("HomegrownAdapter", () => {
 
   describe("softHoldSlot", () => {
     it("inserts an advisory soft hold and returns SlotSoftHold", async () => {
-      const mockDb = createMockDb({ insert: [RESERVATION_ROW] });
+      const mockDb = createSequencedMockDb(
+        [[], [], []], // occupied bookings, time blocks, active holds
+        [[RESERVATION_ROW]],
+      );
       const adapter = createAdapter({ getDb: async () => mockDb });
 
       const result = await Effect.runPromise(
@@ -584,7 +591,10 @@ describe("HomegrownAdapter", () => {
     });
 
     it("defaults expiration to 10 minutes when not specified", async () => {
-      const mockDb = createMockDb({ insert: [RESERVATION_ROW] });
+      const mockDb = createSequencedMockDb(
+        [[], [], []], // occupied bookings, time blocks, active holds
+        [[RESERVATION_ROW]],
+      );
       const adapter = createAdapter({ getDb: async () => mockDb });
 
       // The adapter calculates expiresAt internally — we just verify the
@@ -598,6 +608,49 @@ describe("HomegrownAdapter", () => {
       );
 
       expect(result.id).toBe("res-uuid-1");
+    });
+
+    it("starts expiration after waiting for the practitioner-day lock", async () => {
+      const initialNow = new Date("2026-04-20T13:00:00.000Z").getTime();
+      let now = initialNow;
+      const dateNow = vi.spyOn(Date, "now").mockImplementation(() => now);
+      const mockDb = Object.assign(
+        createSequencedMockDb(
+          [[PRACTITIONER_ROW], [], [], []],
+          [[RESERVATION_ROW]],
+        ),
+        {
+          execute: vi.fn().mockImplementation(async () => {
+            // Simulate lock contention longer than the requested hold TTL.
+            now = initialNow + 11 * 60_000;
+          }),
+        },
+      );
+
+      try {
+        const adapter = createAdapter({
+          getDb: async () => mockDb,
+          withTransaction: (fn) => fn(mockDb),
+        });
+
+        await Effect.runPromise(
+          adapter.softHoldSlot({
+            serviceId: "svc-uuid-1",
+            datetime: "2026-04-20T14:00:00.000Z",
+            duration: 60,
+            expirationMinutes: 10,
+          }),
+        );
+
+        const insertChain = mockDb.insert.mock.results[0]?.value;
+        expect(insertChain.values).toHaveBeenCalledWith(
+          expect.objectContaining({
+            expiresAt: "2026-04-20T13:21:00.000Z",
+          }),
+        );
+      } finally {
+        dateNow.mockRestore();
+      }
     });
   });
 
@@ -947,13 +1000,11 @@ describe("HomegrownAdapter", () => {
         })),
         insert: vi.fn().mockReturnValue({
           values: vi.fn().mockReturnValue({
-            returning: vi
-              .fn()
-              .mockRejectedValue(
-                Object.assign(new Error("duplicate key value"), {
-                  code: "23505",
-                }),
-              ),
+            returning: vi.fn().mockRejectedValue(
+              Object.assign(new Error("duplicate key value"), {
+                code: "23505",
+              }),
+            ),
           }),
         }),
         update: vi.fn().mockReturnValue({
@@ -1308,7 +1359,9 @@ describe("HomegrownAdapter", () => {
         getDb: async () => mockDb,
       });
 
-      const error = await Effect.runPromise(Effect.flip(adapter.getProviders()));
+      const error = await Effect.runPromise(
+        Effect.flip(adapter.getProviders()),
+      );
 
       expect(error._tag).toBe("ValidationError");
       expect(error).toMatchObject({ field: "defaultPractitionerHandle" });
@@ -1575,7 +1628,9 @@ describe("HomegrownAdapter", () => {
       const { db } = createGateMockDb([adjacent]);
       const adapter = createAdapter({ getDb: async () => db });
 
-      const result = await Effect.runPromise(adapter.createBooking(bookingRequest));
+      const result = await Effect.runPromise(
+        adapter.createBooking(bookingRequest),
+      );
 
       expect(result.id).toBe("booking-uuid-1");
       expect(db.insert).toHaveBeenCalledOnce();
@@ -1612,6 +1667,97 @@ describe("HomegrownAdapter", () => {
       expect(new Date("2026-04-21T00:00:00.000Z").getTime()).toBeLessThan(
         new Date(upperBound as string).getTime(),
       );
+    });
+
+    it("queries the previous local day when the configured buffer crosses midnight", async () => {
+      const { db, whereConds } = createGateMockDb([]);
+      const adapter = createAdapter({
+        getDb: async () => db,
+        bufferMinutes: 30,
+      });
+
+      await Effect.runPromise(
+        adapter.createBooking({
+          ...bookingRequest,
+          // 00:10 EDT on April 21; the 30-minute buffer starts at 23:40 EDT
+          // on April 20, so occupied rows from the prior local day matter.
+          datetime: "2026-04-21T04:10:00.000Z",
+        }),
+      );
+
+      const cond = whereConds.find(
+        (c: any) =>
+          c?.op === "and" &&
+          Array.isArray(c.args) &&
+          c.args.some((a: any) => a?.col === "datetime" && a?.op === "lt"),
+      ) as { args: Array<{ col: string; op: string; val: string }> };
+      const lowerBound = cond.args.find(
+        (a) => a.col === "endTime" && a.op === "gt",
+      )?.val;
+
+      expect(lowerBound).toBe("2026-04-20T04:00:00.000Z");
+    });
+
+    it("queries the next local day when the configured buffer crosses midnight", async () => {
+      const { db, whereConds } = createGateMockDb([]);
+      const adapter = createAdapter({
+        getDb: async () => db,
+        bufferMinutes: 30,
+      });
+
+      await Effect.runPromise(
+        adapter.createBooking({
+          ...bookingRequest,
+          // 22:50-23:50 EDT on April 21; the 30-minute buffer ends at 00:20
+          // EDT on April 22, so occupied rows from the next local day matter.
+          datetime: "2026-04-22T02:50:00.000Z",
+        }),
+      );
+
+      const cond = whereConds.find(
+        (c: any) =>
+          c?.op === "and" &&
+          Array.isArray(c.args) &&
+          c.args.some((a: any) => a?.col === "datetime" && a?.op === "lt"),
+      ) as { args: Array<{ col: string; op: string; val: string }> };
+      const upperBound = cond.args.find(
+        (a) => a.col === "datetime" && a.op === "lt",
+      )?.val;
+
+      expect(upperBound).toBe("2026-04-23T04:00:00.000Z");
+    });
+
+    it("excludes a soft hold only when its id and slot match the booking", async () => {
+      const { db, whereConds } = createGateMockDb([]);
+      const adapter = createAdapter({ getDb: async () => db });
+
+      await Effect.runPromise(
+        adapter.createBooking({
+          ...bookingRequest,
+          softHoldId: "owned-hold-id",
+        }),
+      );
+
+      const holdQuery = whereConds.find(
+        (c: any) =>
+          c?.op === "and" &&
+          Array.isArray(c.args) &&
+          c.args.some((a: any) => a?.op === "isNull"),
+      ) as { args: Array<{ op: string; arg?: { args?: unknown[] } }> };
+      const exclusion = holdQuery.args.find((arg) => arg.op === "not");
+
+      expect(exclusion?.arg).toEqual({
+        op: "and",
+        args: [
+          { op: "eq", col: "id", val: "owned-hold-id" },
+          {
+            op: "eq",
+            col: "datetime",
+            val: "2026-04-20T14:00:00.000Z",
+          },
+          { op: "eq", col: "duration", val: 60 },
+        ],
+      });
     });
 
     it("rejects rescheduleBooking with SLOT_TAKEN when the new slot overlaps another booking", async () => {
