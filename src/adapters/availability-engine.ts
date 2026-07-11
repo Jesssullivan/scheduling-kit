@@ -314,11 +314,47 @@ const getDayOfWeekInTz = (dateStr: string, tz: string): number => {
 };
 
 /** Extract YYYY-MM-DD from an ISO datetime in a timezone */
-const toDateString = (isoDatetime: string, tz: string): string => {
+export const toDateString = (isoDatetime: string, tz: string): string => {
   const d = new Date(isoDatetime);
   const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: tz }); // en-CA gives YYYY-MM-DD
   return formatter.format(d);
 };
+
+/** Advance a YYYY-MM-DD date string by one calendar day (UTC-safe). */
+const nextDateStr = (dateStr: string): string => {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + 1);
+  return formatDateStrUtc(d);
+};
+
+/** Format a Date's UTC calendar day as YYYY-MM-DD */
+const formatDateStrUtc = (d: Date): string => {
+  const y = d.getUTCFullYear();
+  const m = pad(d.getUTCMonth() + 1);
+  const day = pad(d.getUTCDate());
+  return `${y}-${m}-${day}`;
+};
+
+/**
+ * Compute the UTC instants that bound a local-date range in a timezone.
+ *
+ * Returns the UTC instant of local midnight on `startDate` and the exclusive
+ * UTC instant of local midnight on the day after `endDate`. Callers query
+ * occupied blocks over the half-open interval [startIso, endExclusiveIso).
+ *
+ * This is the tz-aware replacement for the old `${date}T00:00:00Z` /
+ * `${date}T23:59:59Z` UTC-day bounds, which dropped evening bookings in
+ * negative-offset timezones: an 8pm America/New_York booking is stored as the
+ * next UTC day, so a UTC-day window for its local date never contained it.
+ */
+export const occupiedDayBoundsUtc = (
+  startDate: string,
+  endDate: string,
+  tz: string,
+): { startIso: string; endExclusiveIso: string } => ({
+  startIso: parseTimeInTz(startDate, '00:00', tz).toISOString(),
+  endExclusiveIso: parseTimeInTz(nextDateStr(endDate), '00:00', tz).toISOString(),
+});
 
 /** Filter occupied blocks to only those relevant to a date */
 const getOccupiedForDate = (

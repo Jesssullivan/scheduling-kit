@@ -29,8 +29,11 @@ import { Errors } from "../core/types.js";
 import {
   getAvailableSlots as computeSlots,
   isSlotAvailable,
+  hasOverlap,
   getDatesWithAvailability,
   generateConfirmationCode,
+  occupiedDayBoundsUtc,
+  toDateString,
   type HoursWindow,
   type HoursOverride,
   type OccupiedBlock,
@@ -76,6 +79,35 @@ export interface HomegrownAdapterConfig {
    * awaits the callback result before leaving the scope.
    */
   withDb?: <T>(fn: (db: any) => Promise<T>) => Promise<T>;
+  /**
+   * Optional transaction runner for the slot-validating write paths.
+   *
+   * When provided, createBooking and rescheduleBooking run their
+   * read-validate-write critical section inside this callback so the
+   * availability re-check and the insert/update are one atomic unit, and a
+   * practitioner-day Postgres advisory lock (pg_advisory_xact_lock) can
+   * serialize concurrent writers for the same practitioner + local calendar
+   * day, including writers targeting overlapping but different start times.
+   * Supply `(fn) => db.transaction(fn)`.
+   *
+   * When omitted, those paths fall back to withDb and the atomicity of the
+   * critical section then depends entirely on the semantics of the consumer's
+   * withDb: a bare passthrough gives none, so two concurrent writers can still
+   * double-book the same slot. Provide withTransaction in production Postgres
+   * deployments; the two-writer integration test only closes the race with it.
+   *
+   * Scope of the additive change: supplying withTransaction is additive for the
+   * advisory lock only. Omitting it disables the lock (concurrent writers are no
+   * longer serialized), but it does NOT restore the previous method contract.
+   * The write-time slot re-validation (assertSlotOpen) runs on every path,
+   * transactional or not, so relative to the pre-validation behavior:
+   * createBooking can now reject with ReservationError(SLOT_TAKEN) when the slot
+   * is taken, and rescheduleBooking can now reject with the same SLOT_TAKEN for
+   * an overlapping target or ValidationError(status) for a cancelled/completed
+   * booking. Callers (including bare withDb consumers) must handle these typed
+   * failures on inputs that previously succeeded.
+   */
+  withTransaction?: <T>(fn: (tx: any) => Promise<T>) => Promise<T>;
   /**
    * Drizzle table modules used by the homegrown scheduling backend.
    *
@@ -173,6 +205,92 @@ export const createHomegrownAdapter = (
   const withDb = async <T>(fn: (db: any) => Promise<T>): Promise<T> => {
     if (config.withDb) return config.withDb(fn);
     return fn(await config.getDb!());
+  };
+
+  // True when the consumer supplied a real transaction runner. Gates the
+  // practitioner-day advisory lock: the lock is only meaningful (and only
+  // issues a pg_advisory_xact_lock) inside an actual transaction, so the
+  // withDb fallback path skips it.
+  const transactional = !!config.withTransaction;
+
+  /**
+   * Run the write critical section inside a transaction when the consumer
+   * provided one, otherwise fall back to withDb. See
+   * HomegrownAdapterConfig.withTransaction for the atomicity contract.
+   */
+  const runInTransaction = async <T>(
+    fn: (db: any) => Promise<T>,
+  ): Promise<T> => {
+    if (config.withTransaction) return config.withTransaction(fn);
+    return withDb(fn);
+  };
+
+  // Advisory-lock namespace ("SC" = scheduling-kit) that partitions our locks
+  // from any other pg_advisory_xact_lock users sharing the connection.
+  const SLOT_LOCK_NAMESPACE = 0x5343;
+
+  /**
+   * Derive a signed 32-bit key (pg int4) for a resource + local day
+   * (YYYY-MM-DD) via FNV-1a. Concurrent writers targeting the same
+   * practitioner and local day hash to the same key and therefore serialize
+   * on the same advisory lock. Day granularity (rather than exact slot start)
+   * is what makes OVERLAPPING writes with different start times contend:
+   * exact-start keys let a 10:00 and a 10:30 writer for the same practitioner
+   * take different locks and double-book. The cost is serializing all
+   * bookings for a practitioner-day, not just conflicting ones; acceptable
+   * write-rate for this solo-practice domain.
+   */
+  const advisoryLockKey = (resource: string, dayKey: string): number => {
+    const input = `${resource}|${dayKey}`;
+    let h = 0x811c9dc5;
+    for (let i = 0; i < input.length; i++) {
+      h ^= input.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    return h | 0;
+  };
+
+  /**
+   * Take transaction-scoped advisory locks covering a candidate interval.
+   * Auto-release on commit or rollback. Unlike SELECT ... FOR UPDATE this
+   * also covers the "no conflicting row exists yet" case that a plain
+   * validate-then-insert leaves open under READ COMMITTED.
+   *
+   * The lock span is the interval padded by the configured buffer so it
+   * matches assertSlotOpen's padded conflict window, and one lock is taken
+   * per local calendar day the padded interval touches (normally one, two
+   * when a slot or its buffer crosses local midnight). Keys are taken in
+   * sorted order so concurrent multi-day writers cannot deadlock.
+   */
+  const acquireSlotLocks = async (
+    d: any,
+    resource: string,
+    startIso: string,
+    endIso: string,
+  ): Promise<void> => {
+    const { sql } = await import("drizzle-orm");
+    const bufferedStart = new Date(new Date(startIso).getTime() - buffer * 60_000);
+    const bufferedEnd = new Date(new Date(endIso).getTime() + buffer * 60_000);
+    const dayKeys = new Set<string>();
+    // Walk the padded interval in 24h steps (plus the endpoint) so every
+    // local date it touches is covered regardless of span length.
+    for (
+      let t = bufferedStart.getTime();
+      t < bufferedEnd.getTime();
+      t += 24 * 60 * 60_000
+    ) {
+      dayKeys.add(toDateString(new Date(t).toISOString(), tz));
+    }
+    dayKeys.add(toDateString(bufferedEnd.toISOString(), tz));
+    // ISO YYYY-MM-DD sorts lexicographically == chronologically.
+    for (const day of [...dayKeys].sort()) {
+      await d.execute(
+        sql`select pg_advisory_xact_lock(${SLOT_LOCK_NAMESPACE}::int4, ${advisoryLockKey(
+          resource,
+          day,
+        )}::int4)`,
+      );
+    }
   };
 
   const loadLegacyAuthPgSchemas =
@@ -322,91 +440,166 @@ export const createHomegrownAdapter = (
     });
   };
 
-  /** Load occupied blocks (bookings + time_blocks + active reservations) for a date range */
-  const loadOccupied = async (
+  /**
+   * Load occupied blocks (bookings + time_blocks + active reservations) for a
+   * local-date range using the supplied executor.
+   *
+   * Shared by the read paths (via loadOccupied, which opens its own scope) and
+   * the transactional write gate (assertSlotOpen), which must reuse the
+   * transaction's executor rather than opening a new scope.
+   *
+   * The window is the tz-aware half-open interval [startIso, endExclusiveIso):
+   * the old `${date}T00:00:00Z` / `${date}T23:59:59Z` UTC-day bounds dropped
+   * evening bookings in negative-offset timezones, since an 8pm
+   * America/New_York booking is stored on the next UTC day and never fell
+   * inside its own local date's UTC window. Bookings and time blocks are
+   * matched by interval overlap (start-before-end, end-after-start) rather than
+   * start-in-window so a block that begins before the window but runs into it
+   * still counts.
+   *
+   * @param excludeBookingId - booking id to omit; a reschedule must not treat
+   *   the booking being moved as a conflict with itself.
+   * @param excludeHoldId - soft-hold id to omit; a booking completing a held
+   *   checkout must not treat the caller's own hold as a conflict.
+   */
+  const loadOccupiedWith = async (
+    d: any,
     startDate: string,
     endDate: string,
+    excludeBookingId?: string,
+    excludeHoldId?: string,
   ): Promise<OccupiedBlock[]> => {
     const {
       bookings: bookingsTable,
       timeBlocks,
       slotReservations,
     } = (await loadSchemas()).booking;
-    const { gte, lte, and, ne, isNull, or, gt } = await import("drizzle-orm");
+    const { gte, lt, and, ne, isNull, gt } = await import("drizzle-orm");
 
-    const startIso = `${startDate}T00:00:00Z`;
-    const endIso = `${endDate}T23:59:59Z`;
+    const { startIso, endExclusiveIso } = occupiedDayBoundsUtc(
+      startDate,
+      endDate,
+      tz,
+    );
 
-    return withDb(async (d) => {
-      // Active bookings (not cancelled)
-      const bookingRows = await d
-        .select({
-          datetime: bookingsTable.datetime,
-          endTime: bookingsTable.endTime,
-        })
-        .from(bookingsTable)
-        .where(
-          and(
-            gte(bookingsTable.datetime, startIso),
-            lte(bookingsTable.datetime, endIso),
-            ne(bookingsTable.status, "cancelled"),
-          ),
-        );
+    // Active bookings (not cancelled) overlapping the window.
+    const bookingConds = [
+      lt(bookingsTable.datetime, endExclusiveIso),
+      gt(bookingsTable.endTime, startIso),
+      ne(bookingsTable.status, "cancelled"),
+    ];
+    if (excludeBookingId) {
+      bookingConds.push(ne(bookingsTable.id, excludeBookingId));
+    }
+    const bookingRows = await d
+      .select({
+        datetime: bookingsTable.datetime,
+        endTime: bookingsTable.endTime,
+      })
+      .from(bookingsTable)
+      .where(and(...bookingConds));
 
-      // Time blocks
-      const blockRows = await d
-        .select({
-          startTime: timeBlocks.startTime,
-          endTime: timeBlocks.endTime,
-        })
-        .from(timeBlocks)
-        .where(
-          and(
-            gte(timeBlocks.startTime, startIso),
-            lte(timeBlocks.startTime, endIso),
-          ),
-        );
+    // Time blocks overlapping the window.
+    const blockRows = await d
+      .select({
+        startTime: timeBlocks.startTime,
+        endTime: timeBlocks.endTime,
+      })
+      .from(timeBlocks)
+      .where(
+        and(
+          lt(timeBlocks.startTime, endExclusiveIso),
+          gt(timeBlocks.endTime, startIso),
+        ),
+      );
 
-      // Active soft holds (not expired, not released)
-      const softHoldRows = await d
-        .select({
-          datetime: slotReservations.datetime,
-          duration: slotReservations.duration,
-        })
-        .from(slotReservations)
-        .where(
-          and(
-            gte(slotReservations.datetime, startIso),
-            lte(slotReservations.datetime, endIso),
-            gt(slotReservations.expiresAt, new Date().toISOString()),
-            isNull(slotReservations.releasedAt),
-          ),
-        );
+    // Active soft holds (not expired, not released). Reservations carry no end
+    // column, so they are matched by start instant within the tz-correct
+    // window rather than by interval overlap.
+    const holdConds = [
+      gte(slotReservations.datetime, startIso),
+      lt(slotReservations.datetime, endExclusiveIso),
+      gt(slotReservations.expiresAt, new Date().toISOString()),
+      isNull(slotReservations.releasedAt),
+    ];
+    if (excludeHoldId) {
+      holdConds.push(ne(slotReservations.id, excludeHoldId));
+    }
+    const softHoldRows = await d
+      .select({
+        datetime: slotReservations.datetime,
+        duration: slotReservations.duration,
+      })
+      .from(slotReservations)
+      .where(and(...holdConds));
 
-      const occupied: OccupiedBlock[] = [];
+    const occupied: OccupiedBlock[] = [];
 
-      for (const r of bookingRows) {
-        occupied.push({
-          start: new Date(r.datetime),
-          end: new Date(r.endTime),
-        });
-      }
-      for (const r of blockRows) {
-        occupied.push({
-          start: new Date(r.startTime),
-          end: new Date(r.endTime),
-        });
-      }
-      for (const r of softHoldRows) {
-        const start = new Date(r.datetime);
-        occupied.push({
-          start,
-          end: new Date(start.getTime() + r.duration * 60_000),
-        });
-      }
+    for (const r of bookingRows) {
+      occupied.push({
+        start: new Date(r.datetime),
+        end: new Date(r.endTime),
+      });
+    }
+    for (const r of blockRows) {
+      occupied.push({
+        start: new Date(r.startTime),
+        end: new Date(r.endTime),
+      });
+    }
+    for (const r of softHoldRows) {
+      const start = new Date(r.datetime);
+      occupied.push({
+        start,
+        end: new Date(start.getTime() + r.duration * 60_000),
+      });
+    }
 
-      return occupied;
-    });
+    return occupied;
+  };
+
+  /** Load occupied blocks for a date range (opens its own executor scope). */
+  const loadOccupied = (
+    startDate: string,
+    endDate: string,
+  ): Promise<OccupiedBlock[]> =>
+    withDb((d) => loadOccupiedWith(d, startDate, endDate));
+
+  /**
+   * Write-time double-booking gate. Re-loads the occupied set for the slot's
+   * local date(s) using the supplied executor and rejects the write with a
+   * ReservationError(SLOT_TAKEN) when the candidate interval (padded by the
+   * configured buffer) overlaps an existing booking, time block, or active
+   * soft hold. Call inside the locked critical section so this check and the
+   * following insert/update are atomic.
+   */
+  const assertSlotOpen = async (
+    d: any,
+    startIso: string,
+    endIso: string,
+    excludeBookingId?: string,
+    excludeHoldId?: string,
+  ): Promise<void> => {
+    const startDate = toDateString(startIso, tz);
+    const endDate = toDateString(endIso, tz);
+    const occupied = await loadOccupiedWith(
+      d,
+      startDate,
+      endDate,
+      excludeBookingId,
+      excludeHoldId,
+    );
+    const bufferedStart = new Date(new Date(startIso).getTime() - buffer * 60_000);
+    const bufferedEnd = new Date(new Date(endIso).getTime() + buffer * 60_000);
+    if (hasOverlap(bufferedStart, bufferedEnd, occupied)) {
+      domainError(
+        Errors.reservation(
+          "SLOT_TAKEN",
+          `Slot ${startIso} is no longer available`,
+          startIso,
+        ),
+      );
+    }
   };
 
   /** Get the default practitioner (requires defaultPractitionerHandle). */
@@ -842,8 +1035,33 @@ export const createHomegrownAdapter = (
 
         let row: any;
         try {
-          [row] = await withDb<any[]>((d) =>
-            d
+          row = await runInTransaction(async (d) => {
+            // Serialize concurrent writers for this practitioner + local day
+            // so the availability re-check and the insert are one atomic
+            // critical section even when the writers target overlapping but
+            // different start times. Only meaningful inside a real
+            // transaction, so the withDb fallback path skips the lock.
+            if (transactional) {
+              await acquireSlotLocks(
+                d,
+                prac?.id ?? "default",
+                startDt.toISOString(),
+                endDt.toISOString(),
+              );
+            }
+            // Write-time double-booking gate: re-validate the slot inside the
+            // locked section and reject it if it is no longer free. The
+            // caller's own soft hold (when threaded through the request) is
+            // excluded, mirroring rescheduleBooking's booking self-exclusion;
+            // without it every held checkout would fail its own booking.
+            await assertSlotOpen(
+              d,
+              startDt.toISOString(),
+              endDt.toISOString(),
+              undefined,
+              request.softHoldId,
+            );
+            const [inserted] = await d
               .insert(bookingsTable)
               .values({
                 confirmationCode,
@@ -861,8 +1079,9 @@ export const createHomegrownAdapter = (
                 // (schema-package-owned) unique index slot.
                 idempotencyKey: request.idempotencyKey || null,
               })
-              .returning(),
-          );
+              .returning();
+            return inserted;
+          });
         } catch (e) {
           // Concurrent duplicate submit: if the underlying table enforces a
           // unique index on idempotency_key (schema is owned by the schema
@@ -962,7 +1181,7 @@ export const createHomegrownAdapter = (
         const { bookings: bookingsTable } = (await loadSchemas()).booking;
         const { eq } = await import("drizzle-orm");
 
-        return withDb(async (d) => {
+        return runInTransaction(async (d) => {
           const [row] = await d
             .select()
             .from(bookingsTable)
@@ -979,8 +1198,38 @@ export const createHomegrownAdapter = (
             );
           }
 
+          // A cancelled or completed booking is terminal: reschedule would
+          // resurrect a closed appointment, so refuse it.
+          if (row.status === "cancelled" || row.status === "completed") {
+            return domainError(
+              Errors.validation(
+                "status",
+                `Cannot reschedule a ${row.status} booking`,
+                row.status,
+              ),
+            );
+          }
+
           const newStart = new Date(newDatetime);
           const newEnd = new Date(newStart.getTime() + row.duration * 60_000);
+
+          // Old slot needs no lock: vacating a block cannot create conflicts.
+          if (transactional) {
+            await acquireSlotLocks(
+              d,
+              row.practitionerId ?? "default",
+              newStart.toISOString(),
+              newEnd.toISOString(),
+            );
+          }
+          // Write-time double-booking gate for the new slot. Exclude this
+          // booking so its own current block is not treated as a conflict.
+          await assertSlotOpen(
+            d,
+            newStart.toISOString(),
+            newEnd.toISOString(),
+            bookingId,
+          );
 
           await d
             .update(bookingsTable)

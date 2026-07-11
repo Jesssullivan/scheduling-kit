@@ -88,6 +88,7 @@ vi.mock("drizzle-orm", () => ({
   ne: (col: string, val: unknown) => ({ op: "ne", col, val }),
   gte: (col: string, val: unknown) => ({ op: "gte", col, val }),
   lte: (col: string, val: unknown) => ({ op: "lte", col, val }),
+  lt: (col: string, val: unknown) => ({ op: "lt", col, val }),
   gt: (col: string, val: unknown) => ({ op: "gt", col, val }),
   isNull: (col: string) => ({ op: "isNull", col }),
 }));
@@ -97,6 +98,30 @@ vi.mock("drizzle-orm", () => ({
 // ---------------------------------------------------------------------------
 
 type MockRow = Record<string, unknown>;
+
+/**
+ * A Drizzle select terminal that is awaitable directly (a bare `.where()` with
+ * no `.limit()`/`.orderBy()`) AND exposes `.limit()`/`.orderBy()`. The adapter
+ * consumes selects both ways: `loadOccupied` awaits `.where()` with no terminal
+ * (real Drizzle queries are thenable), while row lookups chain `.limit(1)` or
+ * `.orderBy(...)`. An `Error` entry rejects on either path.
+ */
+const selectTerminal = (entry: MockRow[] | Error) => {
+  const p = entry instanceof Error ? Promise.reject(entry) : Promise.resolve(entry);
+  // Suppress unhandled-rejection noise on the branch that is never awaited.
+  p.catch(() => {});
+  const settle =
+    entry instanceof Error
+      ? vi.fn().mockRejectedValue(entry)
+      : vi.fn().mockResolvedValue(entry);
+  return {
+    then: p.then.bind(p),
+    catch: p.catch.bind(p),
+    finally: p.finally.bind(p),
+    limit: settle,
+    orderBy: settle,
+  };
+};
 
 const createMockDb = (
   responses: {
@@ -155,10 +180,7 @@ const createSequencedMockDb = (
   const makeSelectChain = () => {
     const rows = selectSequence[selectCall] ?? [];
     selectCall++;
-    const terminals = {
-      limit: vi.fn().mockResolvedValue(rows),
-      orderBy: vi.fn().mockResolvedValue(rows),
-    };
+    const terminals = selectTerminal(rows);
     return {
       where: vi.fn().mockReturnValue(terminals),
       orderBy: terminals.orderBy,
@@ -723,6 +745,9 @@ describe("HomegrownAdapter", () => {
           [SERVICE_ROW], // resolveService
           [CLIENT_ROW], // findOrCreateClient email lookup
           [PRACTITIONER_ROW], // getDefaultPractitioner
+          [], // write gate: occupied bookings
+          [], // write gate: occupied time blocks
+          [], // write gate: active soft holds
         ],
         [
           [BOOKING_ROW], // insert booking
@@ -774,6 +799,9 @@ describe("HomegrownAdapter", () => {
           [SERVICE_ROW], // resolveService
           [], // findOrCreateClient: email not found
           [PRACTITIONER_ROW], // getDefaultPractitioner
+          [], // write gate: occupied bookings
+          [], // write gate: occupied time blocks
+          [], // write gate: active soft holds
         ],
         [
           [{ id: "client-uuid-new" }], // insert client
@@ -834,19 +862,19 @@ describe("HomegrownAdapter", () => {
         [SERVICE_ROW], // 2. resolveService
         [CLIENT_ROW], // 3. findOrCreateClient email lookup
         [PRACTITIONER_ROW], // 4. getDefaultPractitioner
-        [{ ...BOOKING_ROW, idempotencyKey: "idem-race" }], // 5. replay lookup
-        [BOOKING_ROW], // 6. loadBookingById: booking
-        [SERVICE_ROW], // 7. loadBookingById: service
-        [CLIENT_ROW], // 8. loadBookingById: client
-        [PRACTITIONER_ROW], // 9. loadBookingById: practitioner
+        [], // 5. write gate: occupied bookings
+        [], // 6. write gate: occupied time blocks
+        [], // 7. write gate: active soft holds
+        [{ ...BOOKING_ROW, idempotencyKey: "idem-race" }], // 8. replay lookup
+        [BOOKING_ROW], // 9. loadBookingById: booking
+        [SERVICE_ROW], // 10. loadBookingById: service
+        [CLIENT_ROW], // 11. loadBookingById: client
+        [PRACTITIONER_ROW], // 12. loadBookingById: practitioner
       ];
       const makeSelectChain = () => {
         const rows = selectSequence[selectCall] ?? [];
         selectCall++;
-        const terminals = {
-          limit: vi.fn().mockResolvedValue(rows),
-          orderBy: vi.fn().mockResolvedValue(rows),
-        };
+        const terminals = selectTerminal(rows);
         return {
           where: vi.fn().mockReturnValue(terminals),
           orderBy: terminals.orderBy,
@@ -898,15 +926,15 @@ describe("HomegrownAdapter", () => {
         [SERVICE_ROW],
         [CLIENT_ROW],
         [PRACTITIONER_ROW],
+        [], // write gate: occupied bookings
+        [], // write gate: occupied time blocks
+        [], // write gate: active soft holds
         [], // replay lookup also misses
       ];
       const makeSelectChain = () => {
         const rows = selectSequence[selectCall] ?? [];
         selectCall++;
-        const terminals = {
-          limit: vi.fn().mockResolvedValue(rows),
-          orderBy: vi.fn().mockResolvedValue(rows),
-        };
+        const terminals = selectTerminal(rows);
         return {
           where: vi.fn().mockReturnValue(terminals),
           orderBy: terminals.orderBy,
@@ -961,16 +989,15 @@ describe("HomegrownAdapter", () => {
         [SERVICE_ROW],
         [CLIENT_ROW],
         [PRACTITIONER_ROW],
+        [], // write gate: occupied bookings
+        [], // write gate: occupied time blocks
+        [], // write gate: active soft holds
         replayLookupFailure, // replay lookup rejects
       ];
       const makeSelectChain = () => {
         const entry = selectSequence[selectCall] ?? [];
         selectCall++;
-        const terminal =
-          entry instanceof Error
-            ? vi.fn().mockRejectedValue(entry)
-            : vi.fn().mockResolvedValue(entry);
-        const terminals = { limit: terminal, orderBy: terminal };
+        const terminals = selectTerminal(entry);
         return {
           where: vi.fn().mockReturnValue(terminals),
           orderBy: terminals.orderBy,
@@ -1029,14 +1056,14 @@ describe("HomegrownAdapter", () => {
         [SERVICE_ROW], // resolveService (no pre-lookup before it)
         [CLIENT_ROW], // findOrCreateClient email lookup
         [PRACTITIONER_ROW], // getDefaultPractitioner
+        [], // write gate: occupied bookings
+        [], // write gate: occupied time blocks
+        [], // write gate: active soft holds
       ];
       const makeSelectChain = () => {
         const rows = selectSequence[selectCall] ?? [];
         selectCall++;
-        const terminals = {
-          limit: vi.fn().mockResolvedValue(rows),
-          orderBy: vi.fn().mockResolvedValue(rows),
-        };
+        const terminals = selectTerminal(rows);
         return {
           where: vi.fn().mockReturnValue(terminals),
           orderBy: terminals.orderBy,
@@ -1072,8 +1099,10 @@ describe("HomegrownAdapter", () => {
       );
 
       expect(result.id).toBe("booking-uuid-1");
-      // Pre-insert dedup lookup skipped: exactly the 3 pipeline selects ran.
-      expect(mockDb.select).toHaveBeenCalledTimes(3);
+      // Pre-insert dedup lookup skipped: 3 pipeline selects (service, client,
+      // practitioner) plus the 3 write-gate occupied selects ran, but no
+      // idempotency pre-lookup.
+      expect(mockDb.select).toHaveBeenCalledTimes(6);
       expect(insertedValues[0].idempotencyKey).toBeNull();
     });
   });
@@ -1090,14 +1119,14 @@ describe("HomegrownAdapter", () => {
         [SERVICE_ROW], // resolveService
         [CLIENT_ROW], // findOrCreateClient
         [PRACTITIONER_ROW], // getDefaultPractitioner
+        [], // write gate: occupied bookings
+        [], // write gate: occupied time blocks
+        [], // write gate: active soft holds
       ];
       const makeSelectChain = () => {
         const rows = selectSequence[selectCall] ?? [];
         selectCall++;
-        const terminals = {
-          limit: vi.fn().mockResolvedValue(rows),
-          orderBy: vi.fn().mockResolvedValue(rows),
-        };
+        const terminals = selectTerminal(rows);
         return {
           where: vi.fn().mockReturnValue(terminals),
           orderBy: terminals.orderBy,
@@ -1383,6 +1412,9 @@ describe("HomegrownAdapter", () => {
       //   3. calls getBooking internally (4 more selects)
       const mockDb = createSequencedMockDb([
         [BOOKING_ROW], // 1. select existing
+        [], // write gate: occupied bookings
+        [], // write gate: occupied time blocks
+        [], // write gate: active soft holds
         // getBooking selects (called via adapter.getBooking):
         [
           {
@@ -1421,6 +1453,9 @@ describe("HomegrownAdapter", () => {
     it("keeps read, update, and refreshed fetch in one scoped executor call", async () => {
       const mockDb = createSequencedMockDb([
         [BOOKING_ROW],
+        [], // write gate: occupied bookings
+        [], // write gate: occupied time blocks
+        [], // write gate: active soft holds
         [
           {
             ...BOOKING_ROW,
@@ -1441,6 +1476,212 @@ describe("HomegrownAdapter", () => {
 
       expect(result.datetime).toBe("2026-04-21T10:00:00.000Z");
       expect(withDb).toHaveBeenCalledOnce();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Write-time slot validation (double-booking gate)
+  // -------------------------------------------------------------------------
+
+  describe("write-time slot validation", () => {
+    // A booking that overlaps the 60-minute slot starting 2026-04-20T14:00Z.
+    const OVERLAPPING_BOOKING = {
+      datetime: "2026-04-20T14:30:00.000Z",
+      endTime: "2026-04-20T15:30:00.000Z",
+    };
+
+    /**
+     * Build a mock DB for a createBooking call whose write gate sees the given
+     * occupied-bookings rows. Records where-conditions and inserted values so
+     * tests can assert both the rejection and the query the gate issued.
+     */
+    const createGateMockDb = (occupiedBookings: MockRow[]) => {
+      let selectCall = 0;
+      const selectSequence: MockRow[][] = [
+        [], // idempotency pre-lookup
+        [SERVICE_ROW], // resolveService
+        [CLIENT_ROW], // findOrCreateClient email lookup
+        [PRACTITIONER_ROW], // getDefaultPractitioner
+        occupiedBookings, // write gate: occupied bookings
+        [], // write gate: occupied time blocks
+        [], // write gate: active soft holds
+      ];
+      const whereConds: unknown[] = [];
+      const insertedValues: MockRow[] = [];
+      const makeSelectChain = () => {
+        const rows = selectSequence[selectCall] ?? [];
+        selectCall++;
+        const terminals = selectTerminal(rows);
+        return {
+          where: vi.fn().mockImplementation((cond: unknown) => {
+            whereConds.push(cond);
+            return terminals;
+          }),
+          orderBy: terminals.orderBy,
+          limit: terminals.limit,
+        };
+      };
+      const db = {
+        select: vi.fn().mockImplementation(() => ({
+          from: vi.fn().mockImplementation(makeSelectChain),
+        })),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockImplementation((v: MockRow) => {
+            insertedValues.push(v);
+            return { returning: vi.fn().mockResolvedValue([BOOKING_ROW]) };
+          }),
+        }),
+        update: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(undefined),
+          }),
+        }),
+      };
+      return { db, whereConds, insertedValues };
+    };
+
+    const bookingRequest = {
+      serviceId: "svc-uuid-1",
+      datetime: "2026-04-20T14:00:00.000Z",
+      client: TEST_CLIENT,
+      idempotencyKey: "idem-overlap",
+    };
+
+    it("rejects createBooking with SLOT_TAKEN when the slot overlaps an existing booking", async () => {
+      const { db, insertedValues } = createGateMockDb([OVERLAPPING_BOOKING]);
+      const adapter = createAdapter({ getDb: async () => db });
+
+      const error = await Effect.runPromise(
+        Effect.flip(adapter.createBooking(bookingRequest)),
+      );
+
+      expect(error._tag).toBe("ReservationError");
+      expect(error).toMatchObject({
+        code: "SLOT_TAKEN",
+        datetime: "2026-04-20T14:00:00.000Z",
+      });
+      // The insert never ran: the gate rejected before the write.
+      expect(insertedValues).toHaveLength(0);
+      expect(db.insert).not.toHaveBeenCalled();
+    });
+
+    it("allows createBooking when the occupied set does not overlap the slot", async () => {
+      // A booking that ends exactly when the slot starts is adjacent, not
+      // overlapping, and must not block the write.
+      const adjacent = {
+        datetime: "2026-04-20T13:00:00.000Z",
+        endTime: "2026-04-20T14:00:00.000Z",
+      };
+      const { db } = createGateMockDb([adjacent]);
+      const adapter = createAdapter({ getDb: async () => db });
+
+      const result = await Effect.runPromise(adapter.createBooking(bookingRequest));
+
+      expect(result.id).toBe("booking-uuid-1");
+      expect(db.insert).toHaveBeenCalledOnce();
+    });
+
+    it("queries the occupied set with tz-aware ET day bounds so evening bookings survive the UTC boundary", async () => {
+      const { db, whereConds } = createGateMockDb([]);
+      const adapter = createAdapter({ getDb: async () => db });
+
+      await Effect.runPromise(adapter.createBooking(bookingRequest));
+
+      // The occupied-bookings query is the first where-condition carrying a
+      // datetime upper bound. Its bounds must be ET local midnight
+      // (EDT = UTC-4 on 2026-04-20), not the naive UTC-day bounds.
+      const cond = whereConds.find(
+        (c: any) =>
+          c?.op === "and" &&
+          Array.isArray(c.args) &&
+          c.args.some((a: any) => a?.col === "datetime" && a?.op === "lt"),
+      ) as { args: Array<{ col: string; op: string; val: string }> };
+      expect(cond).toBeDefined();
+
+      const upperBound = cond.args.find(
+        (a) => a.col === "datetime" && a.op === "lt",
+      )?.val;
+      const lowerBound = cond.args.find(
+        (a) => a.col === "endTime" && a.op === "gt",
+      )?.val;
+
+      expect(lowerBound).toBe("2026-04-20T04:00:00.000Z");
+      expect(upperBound).toBe("2026-04-21T04:00:00.000Z");
+      // An 8pm ET booking (stored 2026-04-21T00:00Z) falls inside these bounds
+      // but would have been excluded by the old 2026-04-20T23:59:59Z bound.
+      expect(new Date("2026-04-21T00:00:00.000Z").getTime()).toBeLessThan(
+        new Date(upperBound as string).getTime(),
+      );
+    });
+
+    it("rejects rescheduleBooking with SLOT_TAKEN when the new slot overlaps another booking", async () => {
+      // A different booking occupies the target slot. The reschedule gate
+      // excludes the booking being moved, so this conflict is a real one.
+      const otherBooking = {
+        datetime: "2026-04-21T10:30:00.000Z",
+        endTime: "2026-04-21T11:30:00.000Z",
+      };
+      const mockDb = createSequencedMockDb([
+        [BOOKING_ROW], // select existing (status confirmed)
+        [otherBooking], // write gate: occupied bookings (conflict)
+        [], // write gate: occupied time blocks
+        [], // write gate: active soft holds
+      ]);
+      const adapter = createAdapter({ getDb: async () => mockDb });
+
+      const error = await Effect.runPromise(
+        Effect.flip(
+          adapter.rescheduleBooking(
+            "booking-uuid-1",
+            "2026-04-21T10:00:00.000Z",
+          ),
+        ),
+      );
+
+      expect(error._tag).toBe("ReservationError");
+      expect(error).toMatchObject({ code: "SLOT_TAKEN" });
+      expect(mockDb.update).not.toHaveBeenCalled();
+    });
+
+    it("rejects rescheduleBooking of a cancelled booking with a status ValidationError", async () => {
+      const mockDb = createSequencedMockDb([
+        [{ ...BOOKING_ROW, status: "cancelled" }],
+      ]);
+      const adapter = createAdapter({ getDb: async () => mockDb });
+
+      const error = await Effect.runPromise(
+        Effect.flip(
+          adapter.rescheduleBooking(
+            "booking-uuid-1",
+            "2026-04-21T10:00:00.000Z",
+          ),
+        ),
+      );
+
+      expect(error._tag).toBe("ValidationError");
+      expect(error).toMatchObject({ field: "status", value: "cancelled" });
+      // Terminal-status check short-circuits before any occupied lookup or write.
+      expect(mockDb.update).not.toHaveBeenCalled();
+    });
+
+    it("rejects rescheduleBooking of a completed booking with a status ValidationError", async () => {
+      const mockDb = createSequencedMockDb([
+        [{ ...BOOKING_ROW, status: "completed" }],
+      ]);
+      const adapter = createAdapter({ getDb: async () => mockDb });
+
+      const error = await Effect.runPromise(
+        Effect.flip(
+          adapter.rescheduleBooking(
+            "booking-uuid-1",
+            "2026-04-21T10:00:00.000Z",
+          ),
+        ),
+      );
+
+      expect(error._tag).toBe("ValidationError");
+      expect(error).toMatchObject({ field: "status", value: "completed" });
+      expect(mockDb.update).not.toHaveBeenCalled();
     });
   });
 

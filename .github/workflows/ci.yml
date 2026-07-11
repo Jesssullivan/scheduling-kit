@@ -47,3 +47,65 @@ jobs:
       npm_access: public
       github_package_name: "@jesssullivan/scheduling-kit"
       dry_run: true
+
+  # Repo-local lane for the write-time double-booking proof (TIN-2764). The
+  # reusable job above runs `pnpm test:integration` with no database, so the
+  # homegrown concurrency suite skips there; this job stands up a Postgres
+  # service and runs the same command with DATABASE_URL set, exercising the
+  # practitioner-day advisory lock against a real database. This is
+  # intentionally NOT part of the reusable workflow (which stays untouched).
+  #
+  # Runner: GitHub-hosted ubuntu-latest, NOT the org self-hosted pool. A
+  # `services:` container with `localhost:5432` port mapping only resolves when
+  # the job runs directly on a Docker-on-host VM. The org's PRIMARY_LINUX runners
+  # are in-cluster/ARC (k8s) where the service is a sibling pod unreachable on
+  # localhost without DinD, which would make beforeAll's connect throw and paint
+  # this proof job a persistent red instead of running it. ubuntu-latest is free
+  # for this public repo and supports service containers natively.
+  integration-postgres:
+    name: Integration (Postgres service)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: scheduling_kit_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # The job runs on the runner host (not inside a job container), so the
+      # service is reachable on localhost via the mapped port.
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/scheduling_kit_test
+      PG_INTEGRATION: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "9.15.9"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec svelte-kit sync
+      # Preflight: fail with an actionable message if the service container is
+      # not reachable, rather than letting the suite's beforeAll connect throw a
+      # confusing error deeper in the run.
+      - name: Wait for Postgres
+        run: |
+          for i in $(seq 1 30); do
+            if pg_isready -h localhost -p 5432 -U postgres; then
+              echo "postgres is ready"
+              exit 0
+            fi
+            echo "waiting for postgres (attempt $i)..."
+            sleep 2
+          done
+          echo "postgres service never became reachable on localhost:5432" >&2
+          exit 1
+      - run: pnpm test:integration
