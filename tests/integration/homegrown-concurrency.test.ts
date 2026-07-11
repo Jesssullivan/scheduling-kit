@@ -7,12 +7,19 @@
  * unique index is NOT what arbitrates) must resolve to exactly one booking; the
  * loser gets a ReservationError(SLOT_TAKEN).
  *
- * The mechanism under test is the per-slot transaction-scoped advisory lock
- * (pg_advisory_xact_lock) taken inside config.withTransaction: the first writer
- * holds the lock, inserts, and commits; the second blocks on the same lock key,
- * then its re-validation sees the committed booking and refuses. A plain
- * validate-then-insert under READ COMMITTED would let both inserts through, so
- * this test FAILS against pre-fix code (which does no write-time validation).
+ * The mechanism under test is the practitioner-day transaction-scoped advisory
+ * lock (pg_advisory_xact_lock) taken inside config.withTransaction: the first
+ * writer holds the lock, inserts, and commits; the second blocks on the same
+ * lock key, then its re-validation sees the committed booking and refuses. A
+ * plain validate-then-insert under READ COMMITTED would let both inserts
+ * through, so this test FAILS against pre-fix code (which does no write-time
+ * validation). Day granularity (not exact slot start) is load-bearing: the
+ * overlapping-writers test below proves two writers with different start times
+ * but overlapping intervals contend on the same lock.
+ *
+ * Also covers the checkout pipeline regression (TIN-2764 blocker): a booking
+ * completing a checkout must not be failed by the caller's OWN Phase B soft
+ * hold, or every alt-payment booking dies with SLOT_TAKEN after charging.
  *
  * Env-gated: skips cleanly with no DATABASE_URL / PG_INTEGRATION. When it runs
  * it bootstraps its own tables (kit_* prefix) mirroring the homegrown adapter's
@@ -35,6 +42,12 @@ import pg from 'pg';
 
 import { createHomegrownAdapter } from '../../src/adapters/homegrown.js';
 import type { BookingRequest } from '../../src/core/types.js';
+import {
+  completeBookingWithAltPayment,
+  type PipelineContext,
+} from '../../src/core/pipelines.js';
+import { createManualPaymentAdapter } from '../../src/payments/manual.js';
+import type { PaymentAdapter } from '../../src/payments/types.js';
 
 // ---------------------------------------------------------------------------
 // Env gate
@@ -238,8 +251,15 @@ suite('HomegrownAdapter concurrency against real Postgres', () => {
   let pool: pg.Pool;
   let db: ReturnType<typeof drizzle>;
   let serviceId: string;
+  let serviceId120: string;
 
   const SLOT = '2026-04-20T14:00:00.000Z';
+  // Far-future fixed Monday 10:00 America/New_York (14:00Z in EDT), so the
+  // pipeline's business-hours + min-advance checks pass deterministically.
+  const PIPELINE_SLOT = '2027-04-19T14:00:00.000Z';
+  // Starts 60 min into PIPELINE_SLOT's 120-min interval: overlapping but a
+  // DIFFERENT start time, so exact-start lock keys would not contend.
+  const OVERLAP_SLOT = '2027-04-19T15:00:00.000Z';
   const HANDLE = 'alex';
 
   const buildAdapter = () =>
@@ -247,8 +267,8 @@ suite('HomegrownAdapter concurrency against real Postgres', () => {
       schemas,
       defaultPractitionerHandle: HANDLE,
       getDb: async () => db,
-      // Real transaction runner: the write path takes its per-slot advisory
-      // lock and re-validates inside this transaction.
+      // Real transaction runner: the write path takes its practitioner-day
+      // advisory lock and re-validates inside this transaction.
       withTransaction: (fn) => db.transaction(fn),
     });
 
@@ -256,10 +276,15 @@ suite('HomegrownAdapter concurrency against real Postgres', () => {
     pool = new pg.Pool({ connectionString, max: 10 });
     db = drizzle(pool);
     await db.execute(DDL);
-    // Seed a service and the default practitioner.
+    // Seed services (60-min and 120-min) and the default practitioner.
     await db.execute(sql`
       INSERT INTO kit_services (name, duration_minutes, price_cents, currency, active, display_order, acuity_id)
       VALUES ('Deep Tissue Massage', 60, 9500, 'USD', true, 1, 'svc-massage-60')
+      ON CONFLICT DO NOTHING;
+    `);
+    await db.execute(sql`
+      INSERT INTO kit_services (name, duration_minutes, price_cents, currency, active, display_order, acuity_id)
+      VALUES ('Hot Stone Massage', 120, 18000, 'USD', true, 2, 'svc-massage-120')
       ON CONFLICT DO NOTHING;
     `);
     await db.execute(sql`
@@ -267,11 +292,28 @@ suite('HomegrownAdapter concurrency against real Postgres', () => {
       VALUES (${HANDLE}, 'Alex Rivera', 'Licensed Massage Therapist')
       ON CONFLICT (handle) DO NOTHING;
     `);
-    const [svc] = await db
+    // Business hours for every day of the week: the checkout pipeline's
+    // Phase A availability check requires effective hours (createBooking
+    // itself does not, so the direct-adapter tests never needed these).
+    await db.execute(sql`DELETE FROM kit_business_hours;`);
+    for (let dayOfWeek = 0; dayOfWeek < 7; dayOfWeek++) {
+      await db.execute(sql`
+        INSERT INTO kit_business_hours (day_of_week, opens, closes)
+        VALUES (${dayOfWeek}, '09:00', '17:00');
+      `);
+    }
+    const [svc60] = await db
       .select({ id: services.id })
       .from(services)
+      .where(sql`${services.acuityId} = 'svc-massage-60'`)
       .limit(1);
-    serviceId = svc.id;
+    serviceId = svc60.id;
+    const [svc120] = await db
+      .select({ id: services.id })
+      .from(services)
+      .where(sql`${services.acuityId} = 'svc-massage-120'`)
+      .limit(1);
+    serviceId120 = svc120.id;
   }, 30000);
 
   afterAll(async () => {
@@ -284,9 +326,11 @@ suite('HomegrownAdapter concurrency against real Postgres', () => {
   });
 
   beforeEach(async () => {
-    // Clean bookings between tests; reseed the shared client so the outside-txn
-    // findOrCreateClient hits the update path (no client-insert unique race).
+    // Clean bookings and holds between tests; reseed the shared client so the
+    // outside-txn findOrCreateClient hits the update path (no client-insert
+    // unique race).
     await db.execute(sql`DELETE FROM kit_bookings;`);
+    await db.execute(sql`DELETE FROM kit_slot_reservations;`);
     await db.execute(sql`DELETE FROM kit_clients;`);
     await db.execute(sql`
       INSERT INTO kit_clients (first_name, last_name, email, phone)
@@ -305,6 +349,11 @@ suite('HomegrownAdapter concurrency against real Postgres', () => {
     },
     idempotencyKey,
   });
+
+  const requestFor = (
+    idempotencyKey: string,
+    overrides: Partial<Pick<BookingRequest, 'serviceId' | 'datetime'>>,
+  ): BookingRequest => ({ ...request(idempotencyKey), ...overrides });
 
   it('lets exactly one of two concurrent bookings for the same slot win', async () => {
     const adapter = buildAdapter();
@@ -346,6 +395,142 @@ suite('HomegrownAdapter concurrency against real Postgres', () => {
       .select({ id: bookings.id })
       .from(bookings)
       .where(sql`${bookings.datetime} = ${SLOT}`);
+    expect(rows).toHaveLength(1);
+  }, 30000);
+
+  // TIN-2764 regression (revenue path): the checkout pipeline places its own
+  // advisory soft hold in Phase B, charges in Phase C, and creates the booking
+  // in Phase D. Pre-fix, Phase D's write-time gate counted the caller's OWN
+  // hold as a conflict, so every held alt-payment booking failed with
+  // SLOT_TAKEN after the customer was charged and fell into the refund path.
+  it('completes an alt-payment checkout whose own soft hold is active at booking time', async () => {
+    const payments = new Map<string, PaymentAdapter>([
+      [
+        'cash',
+        createManualPaymentAdapter({ type: 'manual', methods: ['cash'] }, 'cash'),
+      ],
+    ]);
+    const ctx: PipelineContext = {
+      scheduler: buildAdapter(),
+      payments,
+      correlationId: 'itest-hold',
+    };
+
+    const result = await Effect.runPromise(
+      completeBookingWithAltPayment(ctx, {
+        request: requestFor('pipeline-hold-1', { datetime: PIPELINE_SLOT }),
+        paymentMethod: 'cash',
+      }),
+    );
+
+    // The hold must exist for this test to exercise the defect: Phase B
+    // degrades to no-hold on softHoldSlot failure (Effect.catchAll), and a
+    // hold-less run would pass even against pre-fix code.
+    expect(result.softHold).toBeDefined();
+    expect(result.booking.datetime).toBe(PIPELINE_SLOT);
+
+    // Exactly one booking row landed.
+    const rows = await db
+      .select({ id: bookings.id })
+      .from(bookings)
+      .where(sql`${bookings.datetime} = ${PIPELINE_SLOT}`);
+    expect(rows).toHaveLength(1);
+
+    // Phase E released the hold after the successful booking.
+    const [hold] = await db
+      .select({ releasedAt: slotReservations.releasedAt })
+      .from(slotReservations)
+      .where(sql`${slotReservations.id} = ${result.softHold!.id}`);
+    expect(hold.releasedAt).not.toBeNull();
+  }, 30000);
+
+  // TIN-2764 regression (overlapping-slot race): two writers for the same
+  // practitioner with DIFFERENT start times but OVERLAPPING intervals must
+  // contend on the same lock. Pre-fix the advisory lock key hashed the exact
+  // slot start, so a 120-min booking at 14:00Z and a 60-min booking at 15:00Z
+  // took different locks and both passed the open-check: double-booking.
+  //
+  // The interleaving is encoded deterministically rather than left to the
+  // scheduler: writer A's harness-owned withTransaction signals once A's
+  // critical section (lock + check + insert) has run, then parks the still
+  // OPEN transaction on a gate. Writer B then runs against a plain adapter
+  // while A is provably uncommitted. The 1.5s bounded wait lets B either
+  // settle (pre-fix: it commits a double-booking) or block on A's lock
+  // (post-fix); the post-fix assertions are interleaving-agnostic, so the
+  // bounded wait cannot flake the shipped test.
+  it('lets exactly one of two overlapping bookings with different start times win', async () => {
+    const deferred = () => {
+      let resolve!: () => void;
+      const promise = new Promise<void>((r) => {
+        resolve = r;
+      });
+      return { promise, resolve };
+    };
+    const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    const aInside = deferred();
+    const releaseGate = deferred();
+
+    // Writer A: 120-min service at 14:00Z, transaction held open on the gate
+    // after its critical section so B demonstrably runs before A commits.
+    const gatedAdapter = createHomegrownAdapter({
+      schemas,
+      defaultPractitionerHandle: HANDLE,
+      getDb: async () => db,
+      withTransaction: (fn) =>
+        db.transaction(async (tx) => {
+          const r = await fn(tx);
+          aInside.resolve();
+          await releaseGate.promise;
+          return r;
+        }),
+    });
+    // Writer B: plain adapter, 60-min service at 15:00Z, entirely inside A's
+    // [14:00Z, 16:00Z) interval.
+    const plainAdapter = buildAdapter();
+
+    let aExit;
+    let bExit;
+    try {
+      const aPromise = Effect.runPromiseExit(
+        gatedAdapter.createBooking(
+          requestFor('overlap-A', {
+            serviceId: serviceId120,
+            datetime: PIPELINE_SLOT,
+          }),
+        ),
+      );
+      await aInside.promise;
+
+      const bPromise = Effect.runPromiseExit(
+        plainAdapter.createBooking(
+          requestFor('overlap-B', { datetime: OVERLAP_SLOT }),
+        ),
+      );
+      // Bounded wait: pre-fix B settles immediately (wrong lock key, no
+      // contention); post-fix B blocks on the shared practitioner-day lock
+      // until A commits, so the delay elapses instead.
+      await Promise.race([bPromise, delay(1500)]);
+
+      releaseGate.resolve();
+      [aExit, bExit] = await Promise.all([aPromise, bPromise]);
+    } finally {
+      // A failed assertion or throw above must not leave A's transaction
+      // open, or afterAll's pool.end() hangs the suite.
+      releaseGate.resolve();
+    }
+
+    const exits = [aExit, bExit];
+    expect(exits.filter((e) => e!._tag === 'Success')).toHaveLength(1);
+    expect(exits.filter((e) => e!._tag === 'Failure')).toHaveLength(1);
+
+    // Exactly one booking row overlaps [14:00Z, 16:00Z).
+    const rows = await db
+      .select({ id: bookings.id })
+      .from(bookings)
+      .where(
+        sql`${bookings.datetime} < '2027-04-19T16:00:00.000Z' AND ${bookings.endTime} > '2027-04-19T14:00:00.000Z'`,
+      );
     expect(rows).toHaveLength(1);
   }, 30000);
 });

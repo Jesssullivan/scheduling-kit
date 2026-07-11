@@ -42,6 +42,7 @@ const BookingRequestSchema = z.object({
   client: ClientInfoSchema,
   paymentMethod: z.string().optional(),
   idempotencyKey: z.string().min(1),
+  softHoldId: z.string().optional(),
 });
 
 // =============================================================================
@@ -154,9 +155,15 @@ export const completeBookingWithAltPayment = (
       }),
     );
 
-    // Phase D: Create booking (refund + release soft hold on failure)
+    // Phase D: Create booking (refund + release soft hold on failure).
+    // Thread the caller's own hold id so the write-time slot gate does not
+    // count the Phase B hold as a conflict and fail every held booking.
     const booking = yield* pipe(
-      scheduler.createBookingWithPaymentRef(request, payment.transactionId, paymentAdapter.name),
+      scheduler.createBookingWithPaymentRef(
+        softHold ? { ...request, softHoldId: softHold.id } : request,
+        payment.transactionId,
+        paymentAdapter.name,
+      ),
       Effect.catchAll((error) =>
         Effect.gen(function* () {
           yield* Effect.catchAll(

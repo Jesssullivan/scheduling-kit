@@ -85,9 +85,10 @@ export interface HomegrownAdapterConfig {
    * When provided, createBooking and rescheduleBooking run their
    * read-validate-write critical section inside this callback so the
    * availability re-check and the insert/update are one atomic unit, and a
-   * per-slot Postgres advisory lock (pg_advisory_xact_lock) can serialize
-   * concurrent writers for the same practitioner + slot. Supply
-   * `(fn) => db.transaction(fn)`.
+   * practitioner-day Postgres advisory lock (pg_advisory_xact_lock) can
+   * serialize concurrent writers for the same practitioner + local calendar
+   * day, including writers targeting overlapping but different start times.
+   * Supply `(fn) => db.transaction(fn)`.
    *
    * When omitted, those paths fall back to withDb and the atomicity of the
    * critical section then depends entirely on the semantics of the consumer's
@@ -207,9 +208,9 @@ export const createHomegrownAdapter = (
   };
 
   // True when the consumer supplied a real transaction runner. Gates the
-  // per-slot advisory lock: the lock is only meaningful (and only issues a
-  // pg_advisory_xact_lock) inside an actual transaction, so the withDb
-  // fallback path skips it.
+  // practitioner-day advisory lock: the lock is only meaningful (and only
+  // issues a pg_advisory_xact_lock) inside an actual transaction, so the
+  // withDb fallback path skips it.
   const transactional = !!config.withTransaction;
 
   /**
@@ -229,12 +230,18 @@ export const createHomegrownAdapter = (
   const SLOT_LOCK_NAMESPACE = 0x5343;
 
   /**
-   * Derive a signed 32-bit key (pg int4) for a resource + slot start via
-   * FNV-1a. Concurrent writers targeting the same practitioner and slot hash
-   * to the same key and therefore serialize on the same advisory lock.
+   * Derive a signed 32-bit key (pg int4) for a resource + local day
+   * (YYYY-MM-DD) via FNV-1a. Concurrent writers targeting the same
+   * practitioner and local day hash to the same key and therefore serialize
+   * on the same advisory lock. Day granularity (rather than exact slot start)
+   * is what makes OVERLAPPING writes with different start times contend:
+   * exact-start keys let a 10:00 and a 10:30 writer for the same practitioner
+   * take different locks and double-book. The cost is serializing all
+   * bookings for a practitioner-day, not just conflicting ones; acceptable
+   * write-rate for this solo-practice domain.
    */
-  const advisoryLockKey = (resource: string, slotStartIso: string): number => {
-    const input = `${resource}|${slotStartIso}`;
+  const advisoryLockKey = (resource: string, dayKey: string): number => {
+    const input = `${resource}|${dayKey}`;
     let h = 0x811c9dc5;
     for (let i = 0; i < input.length; i++) {
       h ^= input.charCodeAt(i);
@@ -244,23 +251,46 @@ export const createHomegrownAdapter = (
   };
 
   /**
-   * Take a transaction-scoped advisory lock for a slot. Auto-releases on
-   * commit or rollback. Unlike SELECT ... FOR UPDATE it also covers the
-   * "no conflicting row exists yet" case that a plain validate-then-insert
-   * leaves open under READ COMMITTED.
+   * Take transaction-scoped advisory locks covering a candidate interval.
+   * Auto-release on commit or rollback. Unlike SELECT ... FOR UPDATE this
+   * also covers the "no conflicting row exists yet" case that a plain
+   * validate-then-insert leaves open under READ COMMITTED.
+   *
+   * The lock span is the interval padded by the configured buffer so it
+   * matches assertSlotOpen's padded conflict window, and one lock is taken
+   * per local calendar day the padded interval touches (normally one, two
+   * when a slot or its buffer crosses local midnight). Keys are taken in
+   * sorted order so concurrent multi-day writers cannot deadlock.
    */
-  const acquireSlotLock = async (
+  const acquireSlotLocks = async (
     d: any,
     resource: string,
-    slotStartIso: string,
+    startIso: string,
+    endIso: string,
   ): Promise<void> => {
     const { sql } = await import("drizzle-orm");
-    await d.execute(
-      sql`select pg_advisory_xact_lock(${SLOT_LOCK_NAMESPACE}::int4, ${advisoryLockKey(
-        resource,
-        slotStartIso,
-      )}::int4)`,
-    );
+    const bufferedStart = new Date(new Date(startIso).getTime() - buffer * 60_000);
+    const bufferedEnd = new Date(new Date(endIso).getTime() + buffer * 60_000);
+    const dayKeys = new Set<string>();
+    // Walk the padded interval in 24h steps (plus the endpoint) so every
+    // local date it touches is covered regardless of span length.
+    for (
+      let t = bufferedStart.getTime();
+      t < bufferedEnd.getTime();
+      t += 24 * 60 * 60_000
+    ) {
+      dayKeys.add(toDateString(new Date(t).toISOString(), tz));
+    }
+    dayKeys.add(toDateString(bufferedEnd.toISOString(), tz));
+    // ISO YYYY-MM-DD sorts lexicographically == chronologically.
+    for (const day of [...dayKeys].sort()) {
+      await d.execute(
+        sql`select pg_advisory_xact_lock(${SLOT_LOCK_NAMESPACE}::int4, ${advisoryLockKey(
+          resource,
+          day,
+        )}::int4)`,
+      );
+    }
   };
 
   const loadLegacyAuthPgSchemas =
@@ -429,12 +459,15 @@ export const createHomegrownAdapter = (
    *
    * @param excludeBookingId - booking id to omit; a reschedule must not treat
    *   the booking being moved as a conflict with itself.
+   * @param excludeHoldId - soft-hold id to omit; a booking completing a held
+   *   checkout must not treat the caller's own hold as a conflict.
    */
   const loadOccupiedWith = async (
     d: any,
     startDate: string,
     endDate: string,
     excludeBookingId?: string,
+    excludeHoldId?: string,
   ): Promise<OccupiedBlock[]> => {
     const {
       bookings: bookingsTable,
@@ -483,20 +516,22 @@ export const createHomegrownAdapter = (
     // Active soft holds (not expired, not released). Reservations carry no end
     // column, so they are matched by start instant within the tz-correct
     // window rather than by interval overlap.
+    const holdConds = [
+      gte(slotReservations.datetime, startIso),
+      lt(slotReservations.datetime, endExclusiveIso),
+      gt(slotReservations.expiresAt, new Date().toISOString()),
+      isNull(slotReservations.releasedAt),
+    ];
+    if (excludeHoldId) {
+      holdConds.push(ne(slotReservations.id, excludeHoldId));
+    }
     const softHoldRows = await d
       .select({
         datetime: slotReservations.datetime,
         duration: slotReservations.duration,
       })
       .from(slotReservations)
-      .where(
-        and(
-          gte(slotReservations.datetime, startIso),
-          lt(slotReservations.datetime, endExclusiveIso),
-          gt(slotReservations.expiresAt, new Date().toISOString()),
-          isNull(slotReservations.releasedAt),
-        ),
-      );
+      .where(and(...holdConds));
 
     const occupied: OccupiedBlock[] = [];
 
@@ -543,6 +578,7 @@ export const createHomegrownAdapter = (
     startIso: string,
     endIso: string,
     excludeBookingId?: string,
+    excludeHoldId?: string,
   ): Promise<void> => {
     const startDate = toDateString(startIso, tz);
     const endDate = toDateString(endIso, tz);
@@ -551,6 +587,7 @@ export const createHomegrownAdapter = (
       startDate,
       endDate,
       excludeBookingId,
+      excludeHoldId,
     );
     const bufferedStart = new Date(new Date(startIso).getTime() - buffer * 60_000);
     const bufferedEnd = new Date(new Date(endIso).getTime() + buffer * 60_000);
@@ -999,16 +1036,31 @@ export const createHomegrownAdapter = (
         let row: any;
         try {
           row = await runInTransaction(async (d) => {
-            // Serialize concurrent writers for this practitioner + slot so the
-            // availability re-check and the insert are one atomic critical
-            // section. Only meaningful inside a real transaction, so the
-            // withDb fallback path skips the lock.
+            // Serialize concurrent writers for this practitioner + local day
+            // so the availability re-check and the insert are one atomic
+            // critical section even when the writers target overlapping but
+            // different start times. Only meaningful inside a real
+            // transaction, so the withDb fallback path skips the lock.
             if (transactional) {
-              await acquireSlotLock(d, prac?.id ?? "default", startDt.toISOString());
+              await acquireSlotLocks(
+                d,
+                prac?.id ?? "default",
+                startDt.toISOString(),
+                endDt.toISOString(),
+              );
             }
             // Write-time double-booking gate: re-validate the slot inside the
-            // locked section and reject it if it is no longer free.
-            await assertSlotOpen(d, startDt.toISOString(), endDt.toISOString());
+            // locked section and reject it if it is no longer free. The
+            // caller's own soft hold (when threaded through the request) is
+            // excluded, mirroring rescheduleBooking's booking self-exclusion;
+            // without it every held checkout would fail its own booking.
+            await assertSlotOpen(
+              d,
+              startDt.toISOString(),
+              endDt.toISOString(),
+              undefined,
+              request.softHoldId,
+            );
             const [inserted] = await d
               .insert(bookingsTable)
               .values({
@@ -1161,11 +1213,13 @@ export const createHomegrownAdapter = (
           const newStart = new Date(newDatetime);
           const newEnd = new Date(newStart.getTime() + row.duration * 60_000);
 
+          // Old slot needs no lock: vacating a block cannot create conflicts.
           if (transactional) {
-            await acquireSlotLock(
+            await acquireSlotLocks(
               d,
               row.practitionerId ?? "default",
               newStart.toISOString(),
+              newEnd.toISOString(),
             );
           }
           // Write-time double-booking gate for the new slot. Exclude this

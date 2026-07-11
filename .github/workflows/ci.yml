@@ -52,8 +52,8 @@ jobs:
   # reusable job above runs `pnpm test:integration` with no database, so the
   # homegrown concurrency suite skips there; this job stands up a Postgres
   # service and runs the same command with DATABASE_URL set, exercising the
-  # per-slot advisory lock against a real database. This is intentionally NOT
-  # part of the reusable workflow (which stays untouched).
+  # practitioner-day advisory lock against a real database. This is
+  # intentionally NOT part of the reusable workflow (which stays untouched).
   #
   # Runner: GitHub-hosted ubuntu-latest, NOT the org self-hosted pool. A
   # `services:` container with `localhost:5432` port mapping only resolves when

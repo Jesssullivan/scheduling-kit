@@ -214,6 +214,12 @@ export interface BookingRequest {
   readonly client: ClientInfo;
   readonly paymentMethod?: string;
   readonly idempotencyKey: string;
+  /**
+   * Id of the caller's own advisory soft hold for this slot, when one was
+   * placed earlier in the flow. The write-time availability gate excludes it
+   * from conflicts so the caller's own hold cannot fail the booking.
+   */
+  readonly softHoldId?: string;
 }
 
 export interface Booking {
