@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   package:
-    uses: tinyland-inc/ci-templates/.github/workflows/js-bazel-package.yml@v3.1.0
+    uses: tinyland-inc/ci-templates/.github/workflows/js-bazel-package.yml@a929a9c7451a6213c7535e6d57a231a279463c00
     with:
       runner_mode: repo_owned
       runner_labels_json: ${{ vars.PRIMARY_LINUX_RUNNER_LABELS_JSON }}
@@ -36,6 +36,9 @@ jobs:
       build_command: pnpm build
       package_check_command: pnpm check:package
       bazel_targets: "//:typecheck //:pkg //:test"
+      # Bootstrap the first committed lock from GF. After the remote artifact is
+      # committed, enable verify_bzlmod_lock in the signed follow-up.
+      emit_bzlmod_lock_artifact: true
       # Cache-first shared-cache-backed Bazel validation (TIN-2110 pilot).
       # Routes the Bazel validation through the fail-closed cache-attachment
       # contract + --config=ci-cached --remote_cache=$BAZEL_REMOTE_CACHE
