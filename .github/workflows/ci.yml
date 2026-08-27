@@ -57,7 +57,6 @@ jobs:
     name: Integration (GF PostgreSQL)
     runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON) }}
     env:
-      PGDATA: ${{ runner.temp }}/scheduling-kit-postgres-${{ github.run_id }}-${{ github.run_attempt }}
       PGHOST: 127.0.0.1
       PGPORT: "55432"
       PGUSER: postgres
@@ -83,6 +82,7 @@ jobs:
           export CI_PNPM_BIN="$(command -v pnpm)"
           nix develop .#ci-postgres --command bash <<'POSTGRES_PROOF'
           set -euo pipefail
+          export PGDATA="$RUNNER_TEMP/scheduling-kit-postgres-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           export PATH="$CI_NODE_BIN_DIR:$(dirname "$CI_PNPM_BIN"):$PATH"
           initdb --username="$PGUSER" --auth=trust "$PGDATA"
           pg_ctl -D "$PGDATA" -l "$RUNNER_TEMP/scheduling-kit-postgres.log" \
