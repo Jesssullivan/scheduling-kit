@@ -38,7 +38,7 @@ bazel_dep(name = "tummycrypt_scheduling_kit", version = "0.11.1")
 with the registry line (already in this repo's `.bazelrc`):
 
 ```text
-common --registry=https://raw.githubusercontent.com/tinyland-inc/bazel-registry/main
+common --registry=https://raw.githubusercontent.com/tinyland-inc/bazel-registry/c5986e30831b5fc4f2ed0b70982089b2d15b1c37
 ```
 
 npm-ecosystem consumers outside the Bazel module graph install the derived

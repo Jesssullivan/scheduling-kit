@@ -23,12 +23,11 @@ concurrency:
 
 jobs:
   package:
-    uses: tinyland-inc/ci-templates/.github/workflows/js-bazel-package.yml@v2.5.1
+    uses: tinyland-inc/ci-templates/.github/workflows/js-bazel-package.yml@v3.1.0
     with:
       runner_mode: repo_owned
       runner_labels_json: ${{ vars.PRIMARY_LINUX_RUNNER_LABELS_JSON }}
       workspace_mode: isolated
-      publish_mode: hosted_exception
       npm_publish_mode: disabled
       node_versions: '["20", "22"]'
       publish_node_version: "22"

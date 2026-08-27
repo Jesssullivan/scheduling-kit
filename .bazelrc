@@ -3,7 +3,9 @@
 # =============================================================================
 
 common --enable_bzlmod
-common --registry=https://raw.githubusercontent.com/tinyland-inc/bazel-registry/main
+# Keep the in-house registry immutable. Advance this SHA deliberately together
+# with remote GF validation; never float the package graph at `main`.
+common --registry=https://raw.githubusercontent.com/tinyland-inc/bazel-registry/c5986e30831b5fc4f2ed0b70982089b2d15b1c37
 common --registry=https://bcr.bazel.build
 
 # Build performance

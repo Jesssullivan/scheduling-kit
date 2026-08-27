@@ -18,12 +18,11 @@ concurrency:
 
 jobs:
   package:
-    uses: tinyland-inc/ci-templates/.github/workflows/js-bazel-package.yml@v2.5.1
+    uses: tinyland-inc/ci-templates/.github/workflows/js-bazel-package.yml@v3.1.0
     with:
       runner_mode: repo_owned
       runner_labels_json: ${{ vars.PRIMARY_LINUX_RUNNER_LABELS_JSON }}
       workspace_mode: isolated
-      publish_mode: hosted_exception
       npm_publish_mode: disabled
       node_versions: '["20", "22"]'
       publish_node_version: "22"
@@ -50,41 +49,24 @@ jobs:
 
   # Repo-local lane for the write-time double-booking proof (TIN-2764). The
   # reusable job above runs `pnpm test:integration` with no database, so the
-  # homegrown concurrency suite skips there; this job stands up a Postgres
-  # service and runs the same command with DATABASE_URL set, exercising the
-  # practitioner-day advisory lock against a real database. This is
-  # intentionally NOT part of the reusable workflow (which stays untouched).
-  #
-  # Runner: GitHub-hosted ubuntu-latest, NOT the org self-hosted pool. A
-  # `services:` container with `localhost:5432` port mapping only resolves when
-  # the job runs directly on a Docker-on-host VM. The org's PRIMARY_LINUX runners
-  # are in-cluster/ARC (k8s) where the service is a sibling pod unreachable on
-  # localhost without DinD, which would make beforeAll's connect throw and paint
-  # this proof job a persistent red instead of running it. ubuntu-latest is free
-  # for this public repo and supports service containers natively.
+  # homegrown concurrency suite skips there. This lane provisions PostgreSQL
+  # from the repo's pinned flake on the same GF capability class as package CI;
+  # it never falls back to a hosted runner or depends on ARC service-container
+  # localhost semantics.
   integration-postgres:
-    name: Integration (Postgres service)
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: scheduling_kit_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
+    name: Integration (GF PostgreSQL)
+    runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON) }}
     env:
-      # The job runs on the runner host (not inside a job container), so the
-      # service is reachable on localhost via the mapped port.
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/scheduling_kit_test
+      PGDATA: ${{ runner.temp }}/scheduling-kit-postgres-${{ github.run_id }}-${{ github.run_attempt }}
+      PGHOST: 127.0.0.1
+      PGPORT: "55432"
+      PGUSER: postgres
+      PGDATABASE: scheduling_kit_test
+      DATABASE_URL: postgres://postgres@127.0.0.1:55432/scheduling_kit_test
       PG_INTEGRATION: "1"
     steps:
       - uses: actions/checkout@v4
+      - uses: tinyland-inc/ci-templates/.github/actions/nix-setup@v3.1.0
       - uses: pnpm/action-setup@v4
         with:
           version: "9.15.9"
@@ -93,19 +75,20 @@ jobs:
           node-version: "22"
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec svelte-kit sync
-      # Preflight: fail with an actionable message if the service container is
-      # not reachable, rather than letting the suite's beforeAll connect throw a
-      # confusing error deeper in the run.
-      - name: Wait for Postgres
+      - name: Run integration proof with pinned PostgreSQL
+        shell: bash
         run: |
-          for i in $(seq 1 30); do
-            if pg_isready -h localhost -p 5432 -U postgres; then
-              echo "postgres is ready"
-              exit 0
-            fi
-            echo "waiting for postgres (attempt $i)..."
-            sleep 2
-          done
-          echo "postgres service never became reachable on localhost:5432" >&2
-          exit 1
-      - run: pnpm test:integration
+          set -euo pipefail
+          export CI_NODE_BIN_DIR="$(dirname "$(command -v node)")"
+          export CI_PNPM_BIN="$(command -v pnpm)"
+          nix develop .#ci-postgres --command bash <<'POSTGRES_PROOF'
+          set -euo pipefail
+          export PATH="$CI_NODE_BIN_DIR:$(dirname "$CI_PNPM_BIN"):$PATH"
+          initdb --username="$PGUSER" --auth=trust "$PGDATA"
+          pg_ctl -D "$PGDATA" -l "$RUNNER_TEMP/scheduling-kit-postgres.log" \
+            -o "-h $PGHOST -p $PGPORT" -w start
+          trap 'pg_ctl -D "$PGDATA" -w stop -m fast >/dev/null 2>&1 || true' EXIT
+          createdb --maintenance-db=postgres "$PGDATABASE"
+          pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE"
+          "$CI_PNPM_BIN" test:integration
+          POSTGRES_PROOF

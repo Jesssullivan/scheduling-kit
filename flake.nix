@@ -76,6 +76,12 @@
         checks.docs = docsSite;
         checks.release-metadata = releaseMetadataCheck;
 
+        # Remote-only database proof used by the GF integration lane. Keeping
+        # PostgreSQL in the locked flake avoids a hosted service-container path.
+        devShells.ci-postgres = pkgs.mkShellNoCC {
+          packages = [ pkgs.postgresql_16 ];
+        };
+
         devShells.default = pkgs.mkShellNoCC {
           packages = with pkgs; [
             actionlint
