@@ -65,15 +65,15 @@ The package should be reusable across multiple businesses. Avoid app-specific as
 
 ## Current Tracking
 
-As of `2026-06-11`, release-authority, artifact-truth, and runner-contract
-convergence have largely landed. The active structural work is docs/toolchain
-truth normalization and the adopter capability contract.
+As of `2026-08-27`, release authority and artifact truth are ruled. The active
+structural work is keeping source documentation and validation workflows aligned
+with the Bzlmod-only delivery contract and the adopter capability boundary.
 
 Active threads:
 
-- `TIN-89` package, Bazel, CI, publish, and dependency truth across shared
-  scheduling packages; its current GitHub face is kit issues `#73`/`#75` and
-  bridge issues `#76`/`#78`
+- `TIN-89` package, Bazel, CI, and dependency truth across shared scheduling
+  packages; its current GitHub face is kit issues `#73`/`#75` and bridge issues
+  `#76`/`#78`
 - the kit-side half of `TIN-88`, the explicit site and backend capability
   contract for reusable adopters, tracked as kit `#79` and bridge `#82`
 
@@ -82,9 +82,9 @@ Closed but still relevant context:
 - `TIN-101` completed the mini sprint for toolchain authority and hermetic package convergence
 - `TIN-103` closed the release-authority ambiguity for `Jesssullivan/scheduling-kit`
 - `TIN-104` was canceled as a duplicate during that convergence work
-- `TIN-165` is done: the tinyland bazel-registry is generated from standalone
-  package truth and currently carries scheduling-kit `0.10.0+` and
-  scheduling-bridge `0.5.11+`; the registry line is in `.bazelrc`
+- `TIN-165` is done: the tinyland Bazel registry is the package delivery SSOT
+- `TIN-3092` is done: the registry carries the immutable scheduling-kit
+  `0.11.1` archive and its GF consumer proof
 - `TIN-677` is done: HomegrownAdapter takes injected schemas from
   `@tummycrypt/tinyland-business-pg`, with `tinyland-auth-pg` kept only as an
   optional legacy fallback
@@ -93,29 +93,30 @@ Current operational truth:
 
 - local development should default to `jesssullivan/main`
 - that branch is the current functional release line
-- current released version is `0.10.0`: git tag plus GitHub Release, GitHub
-  Packages `@jesssullivan/scheduling-kit`, and the active tinyland Bazel
-  registry (`0.10.0+`)
-- npmjs `@tummycrypt/scheduling-kit` is retired for new versions and frozen at
-  `0.8.0`; `npm_publish_mode: disabled` is permanent policy, not a temporary
-  outage
+- current released version is `tummycrypt_scheduling_kit@0.11.1`: source commit
+  and lightweight tag `9a00ee387afe1759ebba0c0a67e9246d84b1aa37`,
+  GitHub Release `v0.11.1`, and append-only registry receipt
+  `cfbb16e6ae957da9e8a25b7418a7871ec815e0a1`
+- the Bzlmod module graph through `tinyland-inc/bazel-registry` is the sole
+  delivery authority; npmjs and GitHub Packages are historical surfaces, not
+  release gates, consumer aliases, or evidence for current versions
 - HomegrownAdapter does not require `tinyland-auth-pg`; schemas are injected
   explicitly (canonically from `@tummycrypt/tinyland-business-pg`) and any
   auth-pg fallback stays optional
 - `#73` remains open only for explicit historical release-surface
-  backfill/documentation around older `0.7.1` / `0.7.2` gaps; the current
-  release/tag/npm/Bazel/registry authority path is healthy
+  backfill/documentation around older `0.7.1` / `0.7.2` gaps; it cannot make a
+  provider package a current delivery authority
 - `tinyland-inc/origin/main` is now a downstream mirror/validation surface,
   not an equally authoritative release surface
-- package metadata, git tags, npm dist-tags, and GitHub releases are separate
-  authority surfaces until `#73` is resolved
+- source metadata, git tags, GitHub Releases, and append-only BCR entries are
+  distinct evidence; only the registry entry delivers a current module
 
 ## Build Truth
 
 There are **two** build surfaces in this repo:
 
 1. `pnpm` remains the package-manager and script interface for local work
-2. Bazel defines and builds the publishable package artifact used by CI
+2. Bazel defines and builds the JavaScript package artifact validated by CI
 
 Do not confuse them.
 
@@ -123,15 +124,15 @@ The repo flake and `.envrc` exist to make those surfaces reproducibly available
 from a fresh machine. They are bootstrap tools, not a second packaging
 authority.
 
-### Canonical publish path
+### Canonical validation and delivery path
 
-Today, the functional publish path is driven by:
+Today, the functional validation path is driven by:
 
 - the shared `js-bazel-package` GitHub Actions workflow
 - metadata, typecheck, lint, test, and build commands invoked through pnpm
 - Bazel targets including `//:pkg`
-- publishable package output from `./bazel-bin/pkg`
-- npm / GitHub Packages release jobs
+- package output from `./bazel-bin/pkg`
+- GF validation only; this repo has no package-publication workflow
 
 And, right now, the functional release repo is:
 
@@ -147,14 +148,15 @@ Bazel exists to provide:
 - hermetic graph definition
 - version / metadata conformity checks
 - cacheability and reproducibility
-- the package artifact that CI publishes
+- the package artifact that GF CI validates
 
 Current target state:
 
 1. release metadata declared once
-2. Bazel validates/builds the publishable artifact
-3. CI publishes that artifact
-4. downstream apps consume only the published version
+2. Bazel validates/builds the package artifact
+3. GF CI validates and archives that artifact as build evidence
+4. an append-only `tinyland-inc/bazel-registry` entry delivers the module
+5. downstream apps consume the ruled Bzlmod version
 
 ## Bazel Guardrails
 
@@ -172,7 +174,7 @@ Key points:
 - `BUILD.bazel` describes the hermetic targets.
 - `pnpm-lock.yaml` remains important because Bazel translates the lockfile.
 
-## CI / Publishing Truth
+## CI / Delivery Truth
 
 ### CI
 
@@ -191,31 +193,26 @@ Typecheck/lint may be tolerated temporarily in CI if they are marked
 `continue-on-error`, but that should not be treated as a steady-state quality
 bar.
 
-### Publishing
+### Delivery
 
 Delivery doctrine:
 
 - the Bzlmod module graph through `tinyland-inc/bazel-registry` is the SSOT
   delivery mechanism
-- GitHub Packages `@jesssullivan/scheduling-kit` is the derived
-  out-of-ecosystem package, built from the Bazel `//:pkg` artifact
-  (`./bazel-bin/pkg`)
-- npmjs `@tummycrypt/scheduling-kit` is retired for new versions and frozen at
-  `0.8.0`; `npm_publish_mode: disabled` is permanent policy, not a temporary
-  outage
+- the source tag and GitHub Release identify the archive; neither replaces the
+  registry entry or the GF consumer proof
+- npmjs and GitHub Packages are historical only; do not add provider
+  coordinates, credentials, publish permissions, consumer guidance, or a
+  publish workflow back to this repository
 
-That GitHub Packages naming split (npm-style identity `@tummycrypt`, GitHub
-Packages scope `@jesssullivan`) is operationally real. Do not break it
-accidentally when editing the publish flow.
-
-Release/publish changes should be made against the functional release line
-first, then ported deliberately into the mirror when needed. Do not split
-package truth across both remotes by accident.
+Release metadata changes should be made against the functional source line
+first, then registered append-only and ported deliberately into the mirror when
+needed. Do not split package truth across both remotes by accident.
 
 Current runner truth:
 
-- current workflows use `runner_mode: repo_owned` and read runner labels from
-  `PRIMARY_LINUX_RUNNER_LABELS_JSON`
+- CI uses the shared `tinyland-inc/ci-templates` package validator and the
+  existing GF capability labels; no hosted-runner exception is allowed
 - do not describe the runner lane as fully proven until repo Actions runner
   visibility and green workflow runs confirm it
 - keep private runner topology, cluster names, and apply details out of this
@@ -290,7 +287,6 @@ Do not turn live-provider tests into the default CI path.
 - `.envrc`
 - `mkdocs.yml`
 - `.github/workflows/ci.yml`
-- `.github/workflows/publish.yml`
 - `scripts/generate-doc-artifacts.mjs`
 - `docs/generated/**`
 - `llms.txt`
@@ -303,7 +299,8 @@ Do not turn live-provider tests into the default CI path.
 ## Guardrails
 
 - Do not move browser automation into this repo.
-- Do not let Bazel metadata drift from npm metadata.
+- Do not let `package.json`, `MODULE.bazel`, and `BUILD.bazel` artifact identity
+  drift; this alignment is build integrity, not a second delivery graph.
 - Do not speak ambiguously about both `main` branches as if they are equally
   authoritative.
 - Do not leak site-specific environment logic into library contracts.

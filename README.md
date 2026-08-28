@@ -7,7 +7,7 @@ composition.
 This repo keeps two intentionally different build surfaces:
 
 - `pnpm` is the local package-manager and script interface
-- Bazel defines and builds the publishable package artifact used by CI
+- Bazel defines and builds the JavaScript package artifact validated by CI
 
 The recommended local bootstrap path is the repo flake plus `direnv`, which
 makes `pnpm`, `bazel` through Bazelisk, and the docs toolchain available from a
@@ -41,15 +41,11 @@ with the registry line (already in this repo's `.bazelrc`):
 common --registry=https://raw.githubusercontent.com/tinyland-inc/bazel-registry/main
 ```
 
-npm-ecosystem consumers outside the Bazel module graph install the derived
-GitHub Packages artifact:
-
-```bash
-pnpm add @jesssullivan/scheduling-kit   # registry: https://npm.pkg.github.com
-```
-
-npmjs (`@tummycrypt/scheduling-kit`) is retired for new versions and frozen at
-`0.8.0`.
+The append-only registry receipt carrying `0.11.1` and its GF consumer proof is
+`cfbb16e6ae957da9e8a25b7418a7871ec815e0a1`. The
+`@tummycrypt/scheduling-kit` string remains the JavaScript import identity inside
+the Bazel artifact; it is not a provider install route. There is no supported
+npmjs or GitHub Packages consumer alias for current releases.
 
 ## Development Environment
 
@@ -84,9 +80,9 @@ bazel build //:pkg
 npm pack --dry-run ./bazel-bin/pkg
 ```
 
-Those checks keep `package.json`, `MODULE.bazel`, and `BUILD.bazel` aligned,
-then validate the Bazel-built package artifact before anything gets near a
-registry.
+Those checks keep `package.json`, `MODULE.bazel`, and `BUILD.bazel` artifact
+identity aligned. GF runs the same validation against the Bazel-built artifact;
+delivery is the separately reviewed append-only BCR entry.
 
 ## Documentation
 
@@ -102,35 +98,37 @@ nix flake check         # Evaluate flake outputs and run lightweight checks
 
 Current reality:
 
-- the functional release line is `Jesssullivan/scheduling-kit`
+- the functional source and tag line is `Jesssullivan/scheduling-kit`
 - `tinyland-inc/scheduling-kit` is now a downstream mirror and validation
-  surface, not a second publish authority
-- the active tinyland Bazel registry carries `scheduling-kit` `0.11.1+` (and
-  `scheduling-bridge` `0.5.11+`); the registry line is already in `.bazelrc`
+  surface, not a second release authority
+- source commit, tag, and GitHub Release `v0.11.1` resolve to
+  `9a00ee387afe1759ebba0c0a67e9246d84b1aa37`
+- the Tinyland Bazel registry carries `tummycrypt_scheduling_kit@0.11.1`; its
+  append-only proof receipt is `cfbb16e6ae957da9e8a25b7418a7871ec815e0a1`
 
-Treat `Jesssullivan/main` as the release authority for package publication and
-metadata changes. Do not assume both `main` branches are equivalent.
+Treat `Jesssullivan/main` as the source authority for release metadata changes.
+Treat `tinyland-inc/bazel-registry` as delivery authority. Do not assume the two
+scheduling-kit `main` branches are equivalent.
 
 The delivery doctrine is:
 
 1. release metadata declared once
-2. Bazel defines and builds the publishable artifact
-3. GitHub Actions validates that artifact on the repo-owned package runner
-4. the Bzlmod module graph via `tinyland-inc/bazel-registry` is the SSOT
+2. Bazel defines and builds the JavaScript artifact
+3. GF GitHub Actions validates that artifact without provider credentials or
+   write permissions
+4. the source tag and GitHub Release identify the immutable archive
+5. the Bzlmod module graph via `tinyland-inc/bazel-registry` is the sole
    delivery mechanism
-5. GitHub Packages carries the derived `@jesssullivan/scheduling-kit` package,
-   built from the Bazel `//:pkg` output, for consumers outside the Bazel
-   module graph
-6. npmjs (`@tummycrypt/scheduling-kit`) is retired for new versions and frozen
-   at `0.8.0`; `npm_publish_mode: disabled` is permanent policy
-7. downstream apps consume the published package only
+6. downstream apps consume the ruled Bzlmod version
+7. npmjs and GitHub Packages remain historical surfaces only
 
 ## Runner Authority
 
-Package CI and publish use the shared `js-bazel-package` workflow with
+Package CI uses the shared `js-bazel-package` validator with
 `runner_mode: repo_owned` and labels from `PRIMARY_LINUX_RUNNER_LABELS_JSON`.
-The workflow publishes through the hosted publish exception for GitHub Packages
-and explicitly disables npmjs publication.
+The PostgreSQL concurrency proof uses the same GF capability class. This repo
+has no publish workflow, hosted-runner exception, provider coordinate, package
+write permission, or publication credential.
 
 Keep private runner topology and apply details out of this public repo.
 

@@ -28,16 +28,16 @@ The dev shell provides:
 This repo keeps two deliberately different surfaces:
 
 1. `pnpm` remains the local package-manager and script interface.
-2. Bazel defines and builds the publishable package artifact used by CI.
+2. Bazel defines and builds the JavaScript package artifact validated by CI.
 
 That split is intentional. Nix bootstraps the tools, Bazel models the artifact
-graph, and the shared `js-bazel-package` workflow publishes from
-`./bazel-bin/pkg`.
+graph, and the shared `js-bazel-package` workflow validates
+`./bazel-bin/pkg` on GF.
 
 The active workflow contract uses repo-owned runner registration with Tinyland
-capability labels. npmjs publication is permanently disabled; the publish path
-validates the Bazel artifact and publishes the derived GitHub Packages package.
-See the delivery doctrine below.
+capability labels. It has read-only permissions and no package provider
+coordinate or credential. This repository has no publication workflow. See the
+delivery doctrine below.
 
 ## Delivery doctrine
 
@@ -46,12 +46,12 @@ Package delivery follows one source of truth:
 1. The Bzlmod module graph is the canonical (SSOT) delivery mechanism.
    Consumers depend on `tummycrypt_scheduling_kit` through the
    `tinyland-inc/bazel-registry` registry line already present in `.bazelrc`.
-2. GitHub Packages (`@jesssullivan/scheduling-kit`) is a derived package: the
-   out-of-ecosystem alternative route for npm-style consumers, built from the
-   same Bazel `//:pkg` output (`./bazel-bin/pkg`) that the module graph models.
-3. npmjs (`@tummycrypt/scheduling-kit`) is retired for first-party delivery.
-   It is frozen at `0.8.0`, and `npm_publish_mode: disabled` in the CI and
-   publish workflows is permanent policy, not a temporary outage.
+2. The source tag and GitHub Release identify the immutable source archive;
+   they do not create a second consumer route.
+3. `@tummycrypt/scheduling-kit` is the JavaScript import identity inside the
+   Bazel artifact, not an npm provider claim.
+4. npmjs and GitHub Packages are historical surfaces only. They are not current
+   delivery evidence, gates, or supported consumer aliases.
 
 ## Bazel Cache Contract
 
@@ -65,9 +65,9 @@ bazel test //:test
 Contributor machines can opt into a remote cache by adding a private
 `user.bazelrc`; this repository intentionally keeps private cache topology out
 of public source. CI remote-cache behavior is owned by the shared
-`js-bazel-package` workflow and its runner environment. The public contract is
-that CI must still publish the Bazel package artifact from `./bazel-bin/pkg`
-with local fallback available when the remote cache is unavailable.
+`js-bazel-package` workflow and its GF runner environment. The public contract
+is that CI validates and archives the Bazel package artifact from
+`./bazel-bin/pkg`; it does not publish that artifact to a package provider.
 
 ## Core commands
 
@@ -96,19 +96,16 @@ Version drift across those files is a bug.
 
 Before cutting a package release, verify these surfaces together:
 
-- Bazel registry entry in `tinyland-inc/bazel-registry` for the new version
-  (the SSOT delivery surface)
-- GitHub Packages package: `@jesssullivan/scheduling-kit`, derived from the
-  Bazel `//:pkg` artifact
-- tag and GitHub release for the package version
-- Bazel package artifact from `./bazel-bin/pkg`
-- consumer dependency range in bridge and app repos
-- npmjs stays frozen: `@tummycrypt/scheduling-kit` is retired at `0.8.0`, and
-  `npm_publish_mode: disabled` must remain in both workflows
+- exact version identity across `package.json`, `MODULE.bazel`, and `BUILD.bazel`
+- GF validation of `//:pkg` and the real-PostgreSQL concurrency proof
+- source tag and GitHub Release resolving to the intended signed commit
+- append-only Bazel registry entry in `tinyland-inc/bazel-registry`
+- isolated BCR consumer proof for the new module version
+- consumer Bzlmod version in bridge and app repositories
 
-Historical releases before this checklist may have npm versions without matching
-GitHub Releases. Document or backfill those explicitly instead of treating the
-latest GitHub Release as complete package truth.
+Do not add an npmjs or GitHub Packages gate to this checklist. Historical
+provider artifacts may be documented as history but cannot establish current
+delivery truth.
 
 ## Docs and LLM surfaces
 

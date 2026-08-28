@@ -88,7 +88,6 @@
     "docs:generate": "node scripts/generate-doc-artifacts.mjs",
     "docs:serve": "pnpm docs:generate && mkdocs serve",
     "docs:check": "pnpm docs:generate --check && mkdocs build --strict",
-    "prepublishOnly": "pnpm check:release-metadata && pnpm package && pnpm check:package",
     "check:release-metadata": "node scripts/check-release-metadata.mjs",
     "check:package": "publint",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
@@ -184,9 +183,6 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Jesssullivan/scheduling-kit.git"
-  },
-  "publishConfig": {
-    "access": "public"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

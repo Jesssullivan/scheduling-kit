@@ -17,23 +17,26 @@ const extract = (source, pattern, label) => {
 const packageJson = JSON.parse(read('package.json'));
 const moduleBazel = read('MODULE.bazel');
 const buildBazel = read('BUILD.bazel');
+const bazelRc = read('.bazelrc');
 const bazelVersion = read('.bazelversion').trim();
 const ciWorkflow = read('.github/workflows/ci.yml');
-const publishWorkflow = read('.github/workflows/publish.yml');
 
+const moduleName = extract(moduleBazel, /module\([\s\S]*?name = "([^"]+)"/m, 'MODULE.bazel name');
 const moduleVersion = extract(moduleBazel, /module\([\s\S]*?version = "([^"]+)"/m, 'MODULE.bazel version');
 const buildVersion = extract(buildBazel, /npm_package\([\s\S]*?version = "([^"]+)"/m, 'BUILD.bazel npm_package version');
 const buildPackageName = extract(buildBazel, /npm_package\([\s\S]*?package = "([^"]+)"/m, 'BUILD.bazel package name');
 const modulePnpmVersion = extract(moduleBazel, /pnpm_version = "([^"]+)"/, 'MODULE.bazel pnpm version');
+const registryUrl = extract(bazelRc, /common --registry=(https:\/\/raw\.githubusercontent\.com\/tinyland-inc\/bazel-registry\/[^\s]+)/, 'Bazel registry URL');
 const ciNodeVersions = extract(ciWorkflow, /node_versions:\s*'([^']+)'/, 'CI node versions');
 const ciBazelTargets = extract(ciWorkflow, /bazel_targets:\s*"([^"]+)"/, 'CI bazel targets');
 const ciPackageDir = extract(ciWorkflow, /package_dir:\s*([^\n]+)/, 'CI package dir');
 const ciRunnerMode = extract(ciWorkflow, /runner_mode:\s*([^\n]+)/, 'CI runner mode');
-const publishMode = extract(publishWorkflow, /publish_mode:\s*([^\n]+)/, 'publish mode');
-const npmPublishMode = extract(publishWorkflow, /npm_publish_mode:\s*([^\n]+)/, 'npm publish mode');
-const publishNodeVersion = extract(publishWorkflow, /publish_node_version:\s*"([^"]+)"/, 'publish node version');
-const githubPackageName = extract(publishWorkflow, /github_package_name:\s*"([^"]+)"/, 'GitHub Packages name');
-const npmAccess = extract(publishWorkflow, /npm_access:\s*([^\n]+)/, 'npm access');
+const ciRunnerLabels = extract(ciWorkflow, /runner_labels_json:\s*([^\n]+)/, 'CI runner labels');
+const ciTemplateRef = extract(
+  ciWorkflow,
+  /uses:\s*tinyland-inc\/ci-templates\/\.github\/workflows\/js-bazel-package\.yml@([^\s]+)/,
+  'CI template ref',
+);
 
 const countFiles = (directoryUrl) => {
   let count = 0;
@@ -151,7 +154,7 @@ const renderReleaseMetadata = () => `${generatedBanner}
 # Release Metadata
 
 Generated from \`package.json\`, \`MODULE.bazel\`, \`BUILD.bazel\`,
-\`.bazelversion\`, and the repo workflows.
+\`.bazelrc\`, \`.bazelversion\`, and the CI workflow.
 
 ## Version Alignment
 
@@ -160,29 +163,29 @@ ${markdownTable(
   [
     ['package.json version', `\`${packageJson.version}\``],
     ['MODULE.bazel version', `\`${moduleVersion}\``],
-    ['BUILD.bazel npm_package version', `\`${buildVersion}\``],
-    ['BUILD.bazel package name', `\`${buildPackageName}\``],
+    ['BUILD.bazel JS package version', `\`${buildVersion}\``],
+    ['BUILD.bazel JS package name', `\`${buildPackageName}\``],
     ['.bazelversion', `\`${bazelVersion}\``],
     ['pnpm packageManager', `\`${packageJson.packageManager}\``],
     ['MODULE.bazel pnpm version', `\`${modulePnpmVersion}\``],
   ],
 )}
 
-## Publish And Workflow Inputs
+## Delivery And Validation Inputs
 
 ${markdownTable(
   ['Field', 'Value'],
   [
-    ['npm package', `\`${packageJson.name}\``],
-    ['npm access', `\`${npmAccess}\``],
-    ['npmjs publish mode', `\`${npmPublishMode}\``],
-    ['GitHub Packages name', `\`${githubPackageName}\``],
+    ['Bzlmod module', `\`${moduleName}\``],
+    ['Bazel registry', registryUrl],
+    ['Source repository', packageJson.repository.url.replace(/^git\+/, '')],
+    ['CI purpose', 'GF validation only'],
+    ['CI template', `\`tinyland-inc/ci-templates@${ciTemplateRef}\``],
     ['CI runner mode', `\`${ciRunnerMode}\``],
-    ['Publish mode', `\`${publishMode}\``],
+    ['CI runner labels', `\`${ciRunnerLabels}\``],
     ['CI node versions', `\`${ciNodeVersions}\``],
-    ['Publish node version', `\`${publishNodeVersion}\``],
     ['Bazel targets', `\`${ciBazelTargets}\``],
-    ['Bazel package dir', `\`${ciPackageDir}\``],
+    ['Bazel artifact dir', `\`${ciPackageDir}\``],
   ],
 )}
 
@@ -211,7 +214,7 @@ const llmsText = `${generatedBanner}
 
 > Backend-agnostic scheduling library with Effect-powered orchestration, Svelte checkout components, scheduling adapters, and Bazel-backed package artifact checks.
 
-This repository keeps pnpm as the local package-manager and script interface while Bazel defines and builds the publishable package artifact used by CI.
+This repository keeps pnpm as the local package-manager and script interface while Bazel defines and builds the JavaScript package artifact validated on GF. Bzlmod through the Tinyland Bazel registry is the sole delivery path.
 
 ## Docs
 
@@ -223,7 +226,7 @@ This repository keeps pnpm as the local package-manager and script interface whi
 ## Generated Reference
 
 - [Package surface](docs/generated/package-surface.md): Export map, source inventory, and script entry points derived from repo files.
-- [Release metadata](docs/generated/release-metadata.md): Version, workflow, and publish metadata derived from repo files.
+- [Release metadata](docs/generated/release-metadata.md): Version, Bzlmod delivery, and GF validation metadata derived from repo files.
 
 ## Optional
 
