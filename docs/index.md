@@ -29,15 +29,17 @@ Browser automation and remote Acuity scraping belong in
 This repo intentionally keeps two build surfaces:
 
 - `pnpm` is the local package-manager and script interface
-- Bazel defines and builds the publishable package artifact used by CI
+- Bazel defines and builds the JavaScript package artifact validated by GF
 
 The local flake and `.envrc` exist to provision those tools consistently on a
 fresh machine. They do not replace Bazel or become a second package authority.
+The Bzlmod graph through `tinyland-inc/bazel-registry` is the sole delivery
+path; provider package registries are not current consumer routes.
 
 ## Where to go next
 
-- [Build & Release](build-and-release.md) for bootstrap, Bazel, Nix, and publish hygiene
+- [Build & Release](build-and-release.md) for bootstrap, Bazel, Nix, and delivery hygiene
 - [Testing](testing.md) for the actual test layout and commands in this tree
 - [Tracing](tracing.md) for cassette-based recording and replay details
 - [Generated package surface](generated/package-surface.md) for the current export map and source inventory
-- [Generated release metadata](generated/release-metadata.md) for version and publish inputs derived from repo files
+- [Generated release metadata](generated/release-metadata.md) for version, Bzlmod delivery, and GF validation inputs derived from repo files

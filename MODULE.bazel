@@ -2,14 +2,15 @@
 scheduling-kit - Bazel Module Configuration
 
 Backend-agnostic scheduling library with pluggable adapters, payment processors,
-and Svelte UI components. Published as @tummycrypt/scheduling-kit on npm.
+and Svelte UI components. The JavaScript artifact keeps the
+@tummycrypt/scheduling-kit import identity for Bazel consumers.
 
 Bzlmod-native configuration for Bazel 8+.
-CI and publishing remain pnpm-driven today; Bazel targets are the hermetic build graph.
+CI invokes pnpm tooling but validates the hermetic Bazel build graph on GF.
 
 Build targets:
   bazel build //:scheduling_kit       # Svelte package build (dist/)
-  bazel build //:pkg                  # npm-publishable package
+  bazel build //:pkg                  # JavaScript package artifact
   bazel test //:test                  # Unit tests (vitest)
   bazel build //:typecheck            # Type validation (svelte-check)
 
@@ -37,13 +38,12 @@ bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
 # =============================================================================
 # Inter-module dependencies (tinyland-inc/bazel-registry)
 # =============================================================================
-# Availability substrate (TIN-1996): kit is the first consumer of the
-# tinyland-calendar (RRULE recurrence) and tinyland-caldav-client (external
-# calendar busy overlay) registry modules. npm parity per the TIN-2035
-# delivery doctrine: each bazel_dep below is mirrored by an exact-version
-# @tummycrypt devDependency in package.json (enforced by
-# scripts/check-release-metadata.mjs), so the Bzlmod graph and the
-# pnpm-lock-translated npm graph resolve identical versions.
+# Availability substrate (TIN-1996): kit consumes tinyland-calendar (RRULE
+# recurrence) and tinyland-caldav-client (external calendar busy overlay)
+# through the Bzlmod graph. That graph is the sole first-party delivery
+# authority. package.json and the pnpm lock still carry JavaScript dependencies
+# needed to compile this source tree through npm_translate_lock; they are build
+# inputs, not a parallel first-party registry or a parity authority.
 
 bazel_dep(name = "tummycrypt_tinyland_calendar", version = "0.2.3")
 bazel_dep(name = "tummycrypt_tinyland_caldav_client", version = "0.2.3")

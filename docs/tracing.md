@@ -385,7 +385,7 @@ test:cassette-check:
 ```yaml
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON) }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v2
@@ -393,7 +393,7 @@ jobs:
       - run: pnpm test:unit
 
   cassette-check:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON) }}
     if: github.event_name == 'schedule'
     steps:
       - uses: actions/checkout@v4

@@ -4,7 +4,7 @@
 	"repo": {
 		"name": "scheduling-kit",
 		"github": "Jesssullivan/scheduling-kit",
-		"description": "Backend-agnostic, headless scheduling library with pluggable adapters, payment processors, and Svelte UI; published from the Bazel //:pkg artifact.",
+		"description": "Backend-agnostic, headless scheduling library with pluggable adapters, payment processors, and Svelte UI; delivered through Bzlmod from the Bazel //:pkg artifact.",
 		"linear": {
 			"initiative": "TIN-89",
 			"issue": "TIN-2110"

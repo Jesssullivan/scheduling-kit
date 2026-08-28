@@ -1,13 +1,12 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
-const read = (relativePath) =>
-	readFileSync(new URL(relativePath, import.meta.url), 'utf8');
+const repoRoot = new URL('../', import.meta.url);
+const read = (relativePath) => readFileSync(new URL(relativePath, repoRoot), 'utf8');
 
-const packageJson = JSON.parse(read('../package.json'));
-const moduleBazel = read('../MODULE.bazel');
-const buildBazel = read('../BUILD.bazel');
-const ciWorkflow = read('../.github/workflows/ci.yml');
-const publishWorkflow = read('../.github/workflows/publish.yml');
+const packageJson = JSON.parse(read('package.json'));
+const moduleBazel = read('MODULE.bazel');
+const buildBazel = read('BUILD.bazel');
+const ciWorkflow = read('.github/workflows/ci.yml');
 
 const extract = (source, pattern, label) => {
 	const match = source.match(pattern);
@@ -21,12 +20,6 @@ const expectedVersion = packageJson.version;
 const expectedPackageName = packageJson.name;
 const expectedPnpmVersion = packageJson.packageManager?.replace(/^pnpm@/, '');
 const expectedRepositoryUrl = 'git+https://github.com/Jesssullivan/scheduling-kit.git';
-const expectedPackageBasename = expectedPackageName.split('/').at(-1);
-const expectedRepositoryOwner = new URL(expectedRepositoryUrl.replace(/^git\+/, ''))
-	.pathname.split('/')
-	.filter(Boolean)[0]
-	.toLowerCase();
-const expectedGitHubPackageName = `@${expectedRepositoryOwner}/${expectedPackageBasename}`;
 
 const includes = (source, needle) => source.includes(needle);
 const scalar = (value) =>
@@ -35,17 +28,17 @@ const scalar = (value) =>
 		.replace(/^(['"])(.*)\1\s*(?:#.*)?$/, '$2')
 		.replace(/\s+#.*$/, '')
 		.trim();
-// An acceptable pin is either a 40-char commit SHA or an immutable semver
-// release tag (e.g. @v2.3.0). The ci-templates README rule is to pin to an
-// immutable release tag; a floating branch ref such as @main is not a valid
-// pin. Both forms are accepted so kit can converge off the bare-commit pin
-// onto the immutable v-tag (TIN-2110) without re-introducing pin debt.
 const usesPinnedPackageWorkflow = (workflow) =>
 	/uses:\s*tinyland-inc\/ci-templates\/\.github\/workflows\/js-bazel-package\.yml@(?:[0-9a-fA-F]{40}|v[0-9]+\.[0-9]+\.[0-9]+)\b/.test(
 		workflow,
 	);
 const hasWorkflowConcurrency = (workflow) => /\nconcurrency:\n/.test(workflow);
 const doesNotInheritAllSecrets = (workflow) => !/secrets:\s*inherit/.test(workflow);
+const hasNoWritePermission = (workflow) => !/^\s+[a-z-]+:\s*write\s*$/im.test(workflow);
+const hasNoProviderPublicationSurface = (workflow) =>
+	!/(github_package_name|github_package_registry|npm_access|npm_registry_url|npm_publish_provenance|NPM_TOKEN|TINYLAND_GITHUB_PACKAGES_TOKEN|npm\.pkg\.github\.com|registry\.npmjs\.org)/i.test(
+		workflow,
+	);
 
 const checks = [
 	{
@@ -74,6 +67,16 @@ const checks = [
 		expected: expectedRepositoryUrl,
 	},
 	{
+		label: 'package.json omits publishConfig',
+		actual: String(packageJson.publishConfig === undefined),
+		expected: 'true',
+	},
+	{
+		label: 'package.json omits publication lifecycle hook',
+		actual: String(packageJson.scripts?.prepublishOnly === undefined),
+		expected: 'true',
+	},
+	{
 		label: 'CI reusable workflow pin',
 		actual: String(usesPinnedPackageWorkflow(ciWorkflow)),
 		expected: 'true',
@@ -82,6 +85,21 @@ const checks = [
 		label: 'CI contents permission',
 		actual: scalar(extract(ciWorkflow, /contents:\s*([^\n]+)/, 'CI contents permission')),
 		expected: 'read',
+	},
+	{
+		label: 'CI actions permission',
+		actual: scalar(extract(ciWorkflow, /actions:\s*([^\n]+)/, 'CI actions permission')),
+		expected: 'read',
+	},
+	{
+		label: 'CI has no write permissions',
+		actual: String(hasNoWritePermission(ciWorkflow)),
+		expected: 'true',
+	},
+	{
+		label: 'CI has no packages permission',
+		actual: String(!/^\s+packages:/m.test(ciWorkflow)),
+		expected: 'true',
 	},
 	{
 		label: 'CI concurrency',
@@ -100,32 +118,23 @@ const checks = [
 	},
 	{
 		label: 'CI runner labels',
-		actual: scalar(
-			extract(ciWorkflow, /runner_labels_json:\s*([^\n]+)/, 'CI runner_labels_json'),
-		),
+		actual: scalar(extract(ciWorkflow, /runner_labels_json:\s*([^\n]+)/, 'CI runner_labels_json')),
 		expected: '${{ vars.PRIMARY_LINUX_RUNNER_LABELS_JSON }}',
 	},
 	{
-		label: 'CI publish mode',
-		actual: scalar(extract(ciWorkflow, /publish_mode:\s*([^\n]+)/, 'CI publish_mode')),
-		expected: 'hosted_exception',
+		label: 'CI isolated workspace',
+		actual: scalar(extract(ciWorkflow, /workspace_mode:\s*([^\n]+)/, 'CI workspace_mode')),
+		expected: 'isolated',
 	},
 	{
-		label: 'CI npm publish mode',
-		actual: scalar(
-			extract(ciWorkflow, /npm_publish_mode:\s*([^\n]+)/, 'CI npm_publish_mode'),
-		),
+		label: 'CI disables npm publication',
+		actual: scalar(extract(ciWorkflow, /npm_publish_mode:\s*([^\n]+)/, 'CI npm_publish_mode')),
 		expected: 'disabled',
 	},
 	{
 		label: 'CI package artifact path',
 		actual: scalar(extract(ciWorkflow, /package_dir:\s*([^\n]+)/, 'CI package_dir')),
 		expected: './bazel-bin/pkg',
-	},
-	{
-		label: 'CI omits npm provenance',
-		actual: String(!/npm_publish_provenance:/.test(ciWorkflow)),
-		expected: 'true',
 	},
 	{
 		label: 'CI Bazel package target',
@@ -135,126 +144,41 @@ const checks = [
 		expected: 'true',
 	},
 	{
-		label: 'CI GitHub Packages name',
-		actual: extract(ciWorkflow, /github_package_name:\s*"([^"]+)"/, 'CI github_package_name'),
-		expected: expectedGitHubPackageName,
-	},
-	{
-		label: 'publish reusable workflow pin',
-		actual: String(usesPinnedPackageWorkflow(publishWorkflow)),
+		label: 'CI has no hosted exception',
+		actual: String(!/(hosted_exception|ubuntu-latest)/.test(ciWorkflow)),
 		expected: 'true',
 	},
 	{
-		label: 'publish concurrency',
-		actual: String(hasWorkflowConcurrency(publishWorkflow)),
+		label: 'CI has no publication provider coordinates or secrets',
+		actual: String(hasNoProviderPublicationSurface(ciWorkflow)),
 		expected: 'true',
 	},
 	{
-		label: 'publish packages permission',
-		actual: scalar(
-			extract(publishWorkflow, /packages:\s*([^\n]+)/, 'publish packages permission'),
-		),
-		expected: 'write',
-	},
-	{
-		label: 'publish provenance permission',
-		actual: scalar(
-			extract(publishWorkflow, /id-token:\s*([^\n]+)/, 'publish id-token permission'),
-		),
-		expected: 'write',
-	},
-	{
-		label: 'publish runner mode',
-		actual: scalar(
-			extract(publishWorkflow, /runner_mode:\s*([^\n]+)/, 'publish runner_mode'),
-		),
-		expected: 'repo_owned',
-	},
-	{
-		label: 'publish runner labels',
+		label: 'GF PostgreSQL runner labels',
 		actual: scalar(
 			extract(
-				publishWorkflow,
-				/runner_labels_json:\s*([^\n]+)/,
-				'publish runner_labels_json',
+				ciWorkflow,
+				/integration-postgres:[\s\S]*?runs-on:\s*([^\n]+)/,
+				'GF PostgreSQL runs-on',
 			),
 		),
-		expected: '${{ vars.PRIMARY_LINUX_RUNNER_LABELS_JSON }}',
+		expected: '${{ fromJSON(vars.PRIMARY_LINUX_RUNNER_LABELS_JSON) }}',
 	},
 	{
-		label: 'publish mode',
-		actual: scalar(
-			extract(publishWorkflow, /publish_mode:\s*([^\n]+)/, 'publish publish_mode'),
-		),
-		expected: 'hosted_exception',
-	},
-	{
-		label: 'publish npm publish mode',
-		actual: scalar(
-			extract(
-				publishWorkflow,
-				/npm_publish_mode:\s*([^\n]+)/,
-				'publish npm_publish_mode',
-			),
-		),
-		expected: 'disabled',
-	},
-	{
-		label: 'publish package artifact path',
-		actual: scalar(extract(publishWorkflow, /package_dir:\s*([^\n]+)/, 'publish package_dir')),
-		expected: './bazel-bin/pkg',
-	},
-	{
-		label: 'publish omits npm provenance',
-		actual: String(!/npm_publish_provenance:/.test(publishWorkflow)),
-		expected: 'true',
-	},
-	{
-		label: 'publish omits npm token',
-		actual: String(!/NPM_TOKEN/.test(publishWorkflow)),
-		expected: 'true',
-	},
-	{
-		label: 'publish Bazel package target',
+		label: 'GF PostgreSQL uses pinned nix setup',
 		actual: String(
-			includes(
-				extract(publishWorkflow, /bazel_targets:\s*"([^"]+)"/, 'publish bazel_targets'),
-				'//:pkg',
+			/uses:\s*tinyland-inc\/ci-templates\/\.github\/actions\/nix-setup@(?:[0-9a-fA-F]{40}|v[0-9]+\.[0-9]+\.[0-9]+)\b/.test(
+				ciWorkflow,
 			),
 		),
 		expected: 'true',
 	},
 	{
-		label: 'publish GitHub Packages name',
-		actual: extract(publishWorkflow, /github_package_name:\s*"([^"]+)"/, 'publish github_package_name'),
-		expected: expectedGitHubPackageName,
+		label: 'publication workflow removed',
+		actual: String(!existsSync(new URL('.github/workflows/publish.yml', repoRoot))),
+		expected: 'true',
 	},
 ];
-
-// In-house Bzlmod/npm parity (TIN-1996, per the TIN-2035 delivery doctrine):
-// every tummycrypt_* bazel_dep must be mirrored by an exact-version
-// devDependency on the corresponding @tummycrypt npm package. The lockfile
-// drives Bazel's npm_translate_lock, so a range here would let the Bzlmod
-// module graph and the npm graph resolve different versions.
-//
-// Fail-closed against reformatting: each bazel_dep(...) call is matched as a
-// whole (any formatting, including buildifier multi-line with trailing
-// commas); a tummycrypt_* dep whose version attribute cannot be extracted
-// surfaces as a mismatch instead of silently skipping the check.
-const npmNameFromModule = (moduleName) =>
-	`@tummycrypt/${moduleName.replace(/^tummycrypt_/, '').replaceAll('_', '-')}`;
-for (const [call] of moduleBazel.matchAll(/bazel_dep\s*\([^)]*\)/g)) {
-	const moduleName = /(?<![\w.])name\s*=\s*"(tummycrypt_[a-z0-9_]+)"/.exec(
-		call,
-	)?.[1];
-	if (!moduleName) continue;
-	const moduleVersion = /(?<![\w.])version\s*=\s*"([^"]+)"/.exec(call)?.[1];
-	checks.push({
-		label: `in-house npm parity for ${moduleName}`,
-		actual: packageJson.devDependencies?.[npmNameFromModule(moduleName)],
-		expected: moduleVersion,
-	});
-}
 
 const failures = checks.filter((check) => check.actual !== check.expected);
 
@@ -268,5 +192,5 @@ if (failures.length > 0) {
 }
 
 console.log(
-	`release metadata aligned for ${expectedPackageName}@${expectedVersion} (pnpm ${expectedPnpmVersion}, ${expectedGitHubPackageName})`,
+	`release metadata aligned for ${expectedPackageName}@${expectedVersion}; GF validation only, BCR delivery`,
 );
